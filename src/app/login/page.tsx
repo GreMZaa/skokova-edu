@@ -3,8 +3,9 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, BookOpen, Lock, Mail, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Lock, Mail, User, Phone, CheckCircle2, AlertCircle, Loader2, KeyRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { formatRussianPhone } from '@/lib/formatters';
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -16,6 +17,7 @@ function LoginContent() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -24,7 +26,6 @@ function LoginContent() {
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    // Если переход по ссылке из письма сброса пароля
     if (isResetModeParam || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
       setIsSetNewPasswordMode(true);
     }
@@ -58,7 +59,7 @@ function LoginContent() {
         setSuccessMsg('🎉 Новый пароль успешно сохранён! Переход в кабинет...');
         setTimeout(() => {
           window.location.href = '/my-dashboard';
-        }, 1200);
+        }, 800);
       } catch (err: any) {
         console.error('Update password error:', err);
         setErrorMsg(err.message || 'Ошибка обновления пароля');
@@ -68,10 +69,15 @@ function LoginContent() {
       return;
     }
 
-    // 2. Запрос на отправку ссылки восстановления на почту
+    // 2. Мгновенное и безопасное восстановление по Email + Номеру телефона
     if (isForgotPassword) {
       if (!email || !email.includes('@')) {
         setErrorMsg('Пожалуйста, укажите корректный Email');
+        return;
+      }
+
+      if (!password || password.length < 6) {
+        setErrorMsg('Новый пароль должен содержать минимум 6 символов');
         return;
       }
 
@@ -80,7 +86,7 @@ function LoginContent() {
         const res = await fetch('/api/parent/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, phone, newPassword: password }),
         });
 
         const data = await res.json();
@@ -88,9 +94,22 @@ function LoginContent() {
           throw new Error(data.error || 'Ошибка восстановления пароля');
         }
 
-        setSuccessMsg(
-          `✉️ Ссылка для восстановления пароля отправлена на вашу почту ${email}. Пожалуйста, откройте письмо и перейдите по ссылке!`
-        );
+        setSuccessMsg('🎉 Пароль успешно изменён! Выполняем вход в кабинет...');
+        
+        // Автоматический вход с новым паролем
+        const supabase = createClient();
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (!signInError) {
+          setTimeout(() => {
+            window.location.href = '/my-dashboard';
+          }, 800);
+        } else {
+          setIsForgotPassword(false);
+        }
       } catch (err: any) {
         setErrorMsg(err.message || 'Ошибка восстановления пароля');
       } finally {
@@ -187,7 +206,7 @@ function LoginContent() {
           {isSetNewPasswordMode
             ? 'Новый пароль'
             : isForgotPassword
-            ? 'Восстановление доступа'
+            ? 'Мгновенное восстановление'
             : isRegister
             ? 'Регистрация родителя'
             : 'Кабинет родителя'}
@@ -198,7 +217,7 @@ function LoginContent() {
         {isSetNewPasswordMode
           ? 'Укажите новый пароль'
           : isForgotPassword
-          ? 'Восстановление доступа'
+          ? 'Смена и восстановление пароля'
           : isRegister
           ? 'Создать аккаунт семьи'
           : 'Вход в личный кабинет'}
@@ -207,7 +226,7 @@ function LoginContent() {
         {isSetNewPasswordMode
           ? 'Введите новый пароль для вашей учётной записи.'
           : isForgotPassword
-          ? 'Введите ваш email. Мы вышлем безопасную ссылку для сброса пароля.'
+          ? 'Укажите ваш Email, номер телефона для подтверждения и придумайте новый пароль.'
           : isRegister
           ? 'Зарегистрируйтесь, чтобы отслеживать уроки ребёнка и подключаться к видеосвязи'
           : 'Введите ваш email и пароль для доступа к истории занятий'}
@@ -280,7 +299,75 @@ function LoginContent() {
               )}
             </button>
           </>
+        ) : isForgotPassword ? (
+          /* Форма мгновенного сброса по Email + Телефон */
+          <>
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-[#C85A32]" />
+                <span>Электронная почта (Email) *</span>
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="name@domain.ru"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none font-mono"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-[#C85A32]" />
+                <span>Ваш телефон при регистрации/записи *</span>
+              </label>
+              <input
+                type="tel"
+                required
+                placeholder="+7 (999) 000-00-00"
+                value={phone}
+                onFocus={() => {
+                  if (!phone) setPhone('+7 (');
+                }}
+                onChange={(e) => setPhone(formatRussianPhone(e.target.value))}
+                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none font-mono"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#C85A32]" />
+                <span>Придумайте новый пароль *</span>
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                placeholder="Минимум 6 символов"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none font-mono"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 px-6 rounded-2xl bg-[#C85A32] hover:bg-[#B34D28] text-white font-bold text-sm tracking-wide hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 mt-6"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Проверка данных...</span>
+                </>
+              ) : (
+                <span>Подтвердить и войти с новым паролем ➔</span>
+              )}
+            </button>
+          </>
         ) : (
+          /* Обычный вход / Регистрация */
           <>
             {isRegister && (
               <div className="space-y-1.5">
@@ -314,39 +401,37 @@ function LoginContent() {
               />
             </div>
 
-            {!isForgotPassword && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-[#C85A32]" />
-                    <span>Пароль *</span>
-                  </label>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-[#C85A32]" />
+                  <span>Пароль *</span>
+                </label>
 
-                  {!isRegister && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsForgotPassword(true);
-                        setErrorMsg('');
-                        setSuccessMsg('');
-                      }}
-                      className="text-xs font-mono font-bold text-[#C85A32] hover:underline cursor-pointer"
-                    >
-                      Забыли пароль?
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none transition-colors font-mono"
-                />
+                {!isRegister && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(true);
+                      setErrorMsg('');
+                      setSuccessMsg('');
+                    }}
+                    className="text-xs font-mono font-bold text-[#C85A32] hover:underline cursor-pointer"
+                  >
+                    Забыли пароль?
+                  </button>
+                )}
               </div>
-            )}
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none transition-colors font-mono"
+              />
+            </div>
 
             <button
               type="submit"
@@ -359,13 +444,7 @@ function LoginContent() {
                   <span>Обработка...</span>
                 </>
               ) : (
-                <span>
-                  {isForgotPassword
-                    ? 'Отправить ссылку на Email'
-                    : isRegister
-                    ? 'Зарегистрироваться'
-                    : 'Войти в кабинет'}
-                </span>
+                <span>{isRegister ? 'Зарегистрироваться' : 'Войти в кабинет'}</span>
               )}
             </button>
           </>
@@ -432,14 +511,16 @@ export default function LoginPage() {
         </div>
       </header>
 
-      {/* Основной контент в компоненте Suspense */}
+      {/* Основной контент */}
       <main className="flex-1 flex items-center justify-center p-4 py-12">
-        <Suspense fallback={
-          <div className="w-full max-w-md bg-white border-2 border-[#1F1E1D] rounded-3xl p-8 hard-shadow-lg text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#C85A32] mb-2" />
-            <span className="font-mono text-xs text-[#595652]">Загрузка формы...</span>
-          </div>
-        }>
+        <Suspense
+          fallback={
+            <div className="w-full max-w-md bg-white border-2 border-[#1F1E1D] rounded-3xl p-8 hard-shadow-lg text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#C85A32] mb-2" />
+              <span className="font-mono text-xs text-[#595652]">Загрузка формы...</span>
+            </div>
+          }
+        >
           <LoginContent />
         </Suspense>
       </main>
