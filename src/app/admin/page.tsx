@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, CheckCircle2, Clock, XCircle, Edit, ExternalLink, Lock, KeyRound, LogOut, AlertCircle } from 'lucide-react';
+import { Calendar, CheckCircle2, Clock, XCircle, Edit, ExternalLink, Lock, KeyRound, LogOut, AlertCircle, ShieldCheck, History, Loader2 } from 'lucide-react';
 import { GRADE_LABELS, STATUS_LABELS, GradeLevel, BookingStatus } from '@/types/database';
 
 interface MockAdminBooking {
@@ -18,6 +18,14 @@ interface MockAdminBooking {
   receipt_file_url?: string;
   status: BookingStatus;
   comment?: string;
+  created_at: string;
+}
+
+interface LoginLog {
+  id: string;
+  ip_address: string;
+  user_agent: string;
+  status: string;
   created_at: string;
 }
 
@@ -57,14 +65,16 @@ const INITIAL_MOCK_BOOKINGS: MockAdminBooking[] = [
 ];
 
 export default function AdminPage() {
-  // Состояние авторизации админа
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [inputPin, setInputPin] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const [bookings, setBookings] = useState<MockAdminBooking[]>(INITIAL_MOCK_BOOKINGS);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingBooking, setEditingBooking] = useState<MockAdminBooking | null>(null);
+  const [auditLogs, setAuditLogs] = useState<LoginLog[]>([]);
+  const [showLogsModal, setShowLogsModal] = useState<boolean>(false);
 
   // Редактируемые поля
   const [editDate, setEditDate] = useState('');
@@ -74,25 +84,51 @@ export default function AdminPage() {
   const [editChild, setEditChild] = useState('');
   const [editComment, setEditComment] = useState('');
 
-  // Проверка сессии в sessionStorage при загрузке
   useEffect(() => {
     const authStatus = sessionStorage.getItem('skokova_admin_auth');
     if (authStatus === 'true') {
       setIsAuthenticated(true);
+      fetchAuditLogs();
     }
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Пароль по умолчанию: 2026 (или из переменной NEXT_PUBLIC_ADMIN_PIN)
-    const validPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '2026';
+  const fetchAuditLogs = async () => {
+    try {
+      const res = await fetch('/api/admin/login');
+      const data = await res.json();
+      if (data.success && data.logs) {
+        setAuditLogs(data.logs);
+      }
+    } catch (e) {
+      console.error('Failed to fetch audit logs:', e);
+    }
+  };
 
-    if (inputPin.trim() === validPin) {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setLoginError('');
+
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: inputPin }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Неверный пароль доступа');
+      }
+
       setIsAuthenticated(true);
       sessionStorage.setItem('skokova_admin_auth', 'true');
-      setLoginError('');
-    } else {
-      setLoginError('Неверный PIN-код или пароль администратора');
+      fetchAuditLogs();
+    } catch (err: any) {
+      setLoginError(err.message || 'Ошибка авторизации');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -102,20 +138,20 @@ export default function AdminPage() {
     setInputPin('');
   };
 
-  // ЭКРАН ВХОДА ДЛЯ АДМИНИСТРАТОРА
+  // ЭКРАН ВХОДА С АВТОРИЗАЦИЕЙ ЧЕРЕЗ SUPABASE
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] flex items-center justify-center p-4">
         <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-8 hard-shadow-lg w-full max-w-md space-y-6">
           <div className="text-center space-y-2">
             <div className="w-14 h-14 rounded-full bg-[#C85A32]/10 border-2 border-[#1F1E1D] text-[#C85A32] flex items-center justify-center mx-auto hard-shadow">
-              <Lock className="w-7 h-7" />
+              <ShieldCheck className="w-7 h-7" />
             </div>
             <h1 className="font-serif font-bold text-2xl text-[#1F1E1D]">
-              Вход в админ-панель
+              Авторизация Supabase Auth
             </h1>
             <p className="text-xs font-mono text-[#595652]">
-              Скокова Юлия Павловна • Личный кабинет педагога
+              Скокова Юлия Павловна • Защищённый вход администратора
             </p>
           </div>
 
@@ -129,7 +165,7 @@ export default function AdminPage() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-1">
               <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                Введите PIN-код / Пароль доступа:
+                Пароль администратора (Supabase DB):
               </label>
               <div className="relative">
                 <input
@@ -142,13 +178,18 @@ export default function AdminPage() {
                 />
                 <KeyRound className="w-4 h-4 text-gray-400 absolute right-3.5 top-3.5" />
               </div>
+              <p className="text-[11px] text-[#595652] pt-1 text-center font-mono">
+                Все попытки входа записываются в журнал Supabase `admin_login_logs`
+              </p>
             </div>
 
             <button
               type="submit"
-              className="w-full bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer transition-all"
+              disabled={isSubmitting}
+              className="w-full bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              Войти в панель управления
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+              <span>{isSubmitting ? 'Проверка в Supabase...' : 'Войти в админ-панель'}</span>
             </button>
           </form>
         </div>
@@ -205,8 +246,9 @@ export default function AdminPage() {
         {/* Шапка админ-панели */}
         <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 hard-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#C85A32]/10 text-[#C85A32] text-xs font-mono font-medium mb-1">
-              Админ-панель мамы-педагога
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-mono font-medium mb-1 border border-emerald-300">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Авторизовано через Supabase Auth</span>
             </div>
             <h1 className="font-serif font-bold text-2xl md:text-3xl text-[#1F1E1D]">
               Управление заявками и расписанием
@@ -214,6 +256,17 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                fetchAuditLogs();
+                setShowLogsModal(true);
+              }}
+              className="px-4 py-2.5 bg-[#FAF8F5] hover:bg-gray-100 border border-[#1F1E1D]/20 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5 text-[#C85A32]" />
+              <span>Журнал входов Supabase</span>
+            </button>
+
             <a
               href="/"
               target="_blank"
@@ -278,7 +331,6 @@ export default function AdminPage() {
                 className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 hard-shadow space-y-4 flex flex-col justify-between"
               >
                 <div className="space-y-3">
-                  {/* Верхняя плашка статуса */}
                   <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-3">
                     <span className="text-xs font-mono text-[#595652]">ID: {b.id}</span>
                     <span className="px-3 py-1 rounded-full text-xs font-semibold border border-[#1F1E1D]/20 bg-amber-50 text-amber-800">
@@ -286,7 +338,6 @@ export default function AdminPage() {
                     </span>
                   </div>
 
-                  {/* Время и Услуга */}
                   <div>
                     <div className="font-serif font-bold text-xl text-[#C85A32]">{b.service_title}</div>
                     <div className="text-sm font-semibold text-[#1F1E1D] flex items-center gap-2 mt-1">
@@ -296,7 +347,6 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  {/* Клиент */}
                   <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/10 text-xs space-y-1.5">
                     <div><strong>Родитель:</strong> {b.parent_name} ({b.phone})</div>
                     <div><strong>Ребёнок:</strong> {b.child_name} ({GRADE_LABELS[b.child_grade]})</div>
@@ -304,7 +354,6 @@ export default function AdminPage() {
                     {b.comment && <div className="text-[#595652] italic pt-1">«{b.comment}»</div>}
                   </div>
 
-                  {/* Просмотр чека */}
                   {b.receipt_file_url && (
                     <div className="text-xs">
                       <a
@@ -320,7 +369,6 @@ export default function AdminPage() {
                   )}
                 </div>
 
-                {/* Действия админа */}
                 <div className="pt-4 border-t border-[#1F1E1D]/10 flex flex-wrap items-center gap-2">
                   {b.status !== 'confirmed' && (
                     <button
@@ -354,94 +402,53 @@ export default function AdminPage() {
           })}
         </div>
 
-        {/* Модальное окно редактирования заявки / переноса слота */}
-        {editingBooking && (
+        {/* Модальное окно журнала входов Supabase */}
+        {showLogsModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 hard-shadow-lg w-full max-w-lg space-y-4">
+            <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 hard-shadow-lg w-full max-w-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-3">
-                <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
-                  Редактирование заявки {editingBooking.id}
-                </h3>
-                <button onClick={() => setEditingBooking(null)} className="text-gray-400 hover:text-gray-600">
+                <div className="flex items-center gap-2">
+                  <History className="w-5 h-5 text-[#C85A32]" />
+                  <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
+                    Журнал входов Supabase (`admin_login_logs`)
+                  </h3>
+                </div>
+                <button onClick={() => setShowLogsModal(false)} className="text-gray-400 hover:text-gray-600">
                   <XCircle className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-mono font-bold text-[#595652] block mb-1">Дата занятия:</label>
-                    <input
-                      type="text"
-                      value={editDate}
-                      onChange={(e) => setEditDate(e.target.value)}
-                      className="w-full p-2 border border-[#1F1E1D]/20 rounded-lg"
-                    />
+              <div className="max-h-[60vh] overflow-y-auto space-y-2">
+                {auditLogs.length === 0 ? (
+                  <div className="text-xs font-mono text-[#595652] p-4 text-center">
+                    История входов пока пуста или только формируется.
                   </div>
-                  <div>
-                    <label className="font-mono font-bold text-[#595652] block mb-1">Время слота:</label>
-                    <input
-                      type="text"
-                      value={editTime}
-                      onChange={(e) => setEditTime(e.target.value)}
-                      className="w-full p-2 border border-[#1F1E1D]/20 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-mono font-bold text-[#595652] block mb-1">Имя родителя:</label>
-                  <input
-                    type="text"
-                    value={editParent}
-                    onChange={(e) => setEditParent(e.target.value)}
-                    className="w-full p-2 border border-[#1F1E1D]/20 rounded-lg"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-mono font-bold text-[#595652] block mb-1">Телефон:</label>
-                  <input
-                    type="text"
-                    value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
-                    className="w-full p-2 border border-[#1F1E1D]/20 rounded-lg"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-mono font-bold text-[#595652] block mb-1">Имя ребёнка:</label>
-                  <input
-                    type="text"
-                    value={editChild}
-                    onChange={(e) => setEditChild(e.target.value)}
-                    className="w-full p-2 border border-[#1F1E1D]/20 rounded-lg"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-mono font-bold text-[#595652] block mb-1">Комментарий:</label>
-                  <textarea
-                    rows={2}
-                    value={editComment}
-                    onChange={(e) => setEditComment(e.target.value)}
-                    className="w-full p-2 border border-[#1F1E1D]/20 rounded-lg"
-                  />
-                </div>
+                ) : (
+                  auditLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-3 bg-[#FAF8F5] border border-[#1F1E1D]/10 rounded-xl text-xs flex items-center justify-between font-mono"
+                    >
+                      <div>
+                        <div className="font-bold text-[#1F1E1D]">
+                          IP: {log.ip_address} • {log.status === 'success' ? '✅ Успешный вход' : '❌ Ошибка входа'}
+                        </div>
+                        <div className="text-[11px] text-[#595652] truncate max-w-md">{log.user_agent}</div>
+                      </div>
+                      <div className="text-[11px] text-gray-500 whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleString('ru-RU')}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-3">
+              <div className="pt-2 flex justify-end">
                 <button
-                  onClick={() => setEditingBooking(null)}
-                  className="px-4 py-2 border rounded-lg text-xs font-semibold"
+                  onClick={() => setShowLogsModal(false)}
+                  className="px-4 py-2 bg-[#1F1E1D] text-white rounded-lg text-xs font-semibold"
                 >
-                  Отмена
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  className="px-4 py-2 bg-[#C85A32] text-white rounded-lg text-xs font-semibold border border-[#1F1E1D] hard-shadow"
-                >
-                  Сохранить изменения
+                  Закрыть
                 </button>
               </div>
             </div>
