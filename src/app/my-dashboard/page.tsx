@@ -36,6 +36,7 @@ interface BookingItem {
   id: string;
   service_title: string;
   price: number;
+  selected_date?: string;
   parent_name: string;
   phone: string;
   telegram_handle: string;
@@ -451,15 +452,26 @@ export default function ParentDashboardPage() {
                     className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-5 sm:p-6 hard-shadow transition-all hover:border-[#C85A32]"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1F1E1D]/10 pb-4 mb-4">
-                      <div>
-                        <div className="mb-2">{getStatusBadge(item.status)}</div>
-                        <h3 className="font-serif font-bold text-xl text-[#1F1E1D]">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          {getStatusBadge(item.status)}
+                          <span className="text-xs font-mono font-bold text-[#1F1E1D] bg-[#FAF8F5] px-2.5 py-1 rounded-lg border border-[#1F1E1D]/20">
+                            ID: #{item.id}
+                          </span>
+                        </div>
+                        <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#1F1E1D]">
                           {item.service_title}
                         </h3>
-                        <p className="text-xs font-mono text-[#595652] mt-0.5">
-                          Ребёнок: <span className="font-bold text-[#1F1E1D]">{item.child_name}</span> (
-                          {GRADE_LABELS[item.child_grade] || item.child_grade})
-                        </p>
+                        <div className="text-xs font-mono text-[#595652] flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+                          {item.selected_date && (
+                            <span className="text-[#C85A32] font-bold bg-[#C85A32]/10 px-2 py-0.5 rounded-md border border-[#C85A32]/20">
+                              📅 {item.selected_date}
+                            </span>
+                          )}
+                          <span>
+                            Ребёнок: <strong className="text-[#1F1E1D]">{item.child_name && item.child_name !== 'Нет никого' ? item.child_name : 'Не указан'}</strong> ({GRADE_LABELS[item.child_grade] || item.child_grade})
+                          </span>
+                        </div>
                       </div>
 
                       <div className="text-left sm:text-right">
@@ -780,7 +792,7 @@ export default function ParentDashboardPage() {
                   Оплата урока по СБП
                 </h3>
                 <p className="text-xs text-[#595652] font-mono">
-                  {payModalBooking.service_title} • {payModalBooking.child_name}
+                  {payModalBooking.service_title} • Заказ #{payModalBooking.id}
                 </p>
               </div>
               <button

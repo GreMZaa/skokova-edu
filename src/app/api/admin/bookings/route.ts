@@ -14,14 +14,29 @@ export async function GET() {
     const supabase = createAdminClient();
     const { data: dbBookings, error } = await supabase
       .from('bookings')
-      .select('*')
+      .select('*, time_slots(start_time)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
+    const formattedBookings = (dbBookings || []).map((item: any) => {
+      let dateStr = '';
+      if (item.time_slots?.start_time) {
+        const d = new Date(item.time_slots.start_time);
+        const dayStr = d.toLocaleDateString('ru-RU', { timeZone: 'Europe/Samara', day: 'numeric', month: 'long', weekday: 'short' });
+        const timeStr = d.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Samara', hour: '2-digit', minute: '2-digit' });
+        dateStr = `${dayStr}, ${timeStr}`;
+      }
+
+      return {
+        ...item,
+        dateStr: dateStr || item.dateStr || '',
+      };
+    });
+
     return NextResponse.json({
       success: true,
-      bookings: dbBookings || [],
+      bookings: formattedBookings,
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -47,7 +62,6 @@ export async function PATCH(req: Request) {
 
     const supabase = createAdminClient();
 
-    // Получаем старую запись для проверки slot_id
     const { data: oldBooking } = await supabase
       .from('bookings')
       .select('slot_id')
@@ -76,7 +90,6 @@ export async function PATCH(req: Request) {
 
     if (error) throw error;
 
-    // Если заявка отклонена/отменена — освобождаем слот расписания
     if (status === 'cancelled' && oldBooking?.slot_id) {
       await supabase
         .from('time_slots')
