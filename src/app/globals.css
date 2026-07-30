@@ -18,6 +18,8 @@ body {
   font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* Custom Anti-AI-Slop Hard Shadows & Floating UI */
@@ -33,16 +35,91 @@ body {
   box-shadow: 4px 4px 0px 0px #C85A32;
 }
 
+/* Responsive shadows — smaller on mobile */
+@media (max-width: 640px) {
+  .hard-shadow {
+    box-shadow: 3px 3px 0px 0px #1F1E1D;
+  }
+  
+  .hard-shadow-lg {
+    box-shadow: 4px 4px 0px 0px #1F1E1D;
+  }
+  
+  .hard-shadow-accent {
+    box-shadow: 3px 3px 0px 0px #C85A32;
+  }
+}
+
 .floating-card {
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.floating-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 6px 8px 0px 0px #1F1E1D;
+/* Hover effects only on non-touch devices */
+@media (hover: hover) {
+  .floating-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 6px 8px 0px 0px #1F1E1D;
+  }
+}
+
+@media (hover: hover) and (max-width: 640px) {
+  .floating-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 4px 6px 0px 0px #1F1E1D;
+  }
 }
 
 /* Noise texture overlay for non-sterile organic feel */
 .bg-noise {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* Hide scrollbar for snap-scroll carousels */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth scroll for entire page */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Safe area padding for phones with notch */
+@supports(padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  
+  footer {
+    padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+  }
+}
+
+/* Focus styles for accessibility */
+*:focus-visible {
+  outline: 2px solid #C85A32;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Prevent input zoom on iOS (16px min font-size) */
+@media screen and (max-width: 640px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Z-index layering for mobile menu */
+.z-35 {
+  z-index: 35;
 }

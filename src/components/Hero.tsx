@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, CheckCircle2, Award, Users, BookOpen, ArrowRight } from 'lucide-react';
+import { Calendar, CheckCircle2, Award, ArrowRight } from 'lucide-react';
 import { TEACHER_INFO } from '@/data/teacherInfo';
 
 interface HeroProps {
@@ -11,69 +11,67 @@ interface HeroProps {
 
 export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
   return (
-    <section className="relative pt-12 pb-20 md:pt-20 md:pb-28 overflow-hidden">
+    <section className="relative pt-8 pb-14 sm:pt-12 sm:pb-20 md:pt-20 md:pb-28 overflow-hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 items-center">
           
           {/* Левый текстовый блок */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="lg:col-span-7 space-y-6"
+            className="lg:col-span-7 space-y-5 sm:space-y-6"
           >
             {/* Моноширинный бейдж */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#2E5A44]/10 text-[#2E5A44] border border-[#2E5A44]/20 text-xs font-mono font-medium">
-              <Award className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-full bg-[#2E5A44]/10 text-[#2E5A44] border border-[#2E5A44]/20 text-[10px] sm:text-xs font-mono font-medium">
+              <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
               <span>Опыт более {TEACHER_INFO.experience_years} лет • Высшая категория</span>
             </div>
 
-            {/* Акцидентный типографический заголовок Display Serif */}
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-serif font-bold text-[#1F1E1D] leading-[1.1] tracking-tight">
-              Индивидуальное обучение <br />
-              <span className="italic text-[#C85A32] font-normal">без слёз и стресса</span>
+            {/* Заголовок Display Serif — адаптивный */}
+            <h1 className="text-[2rem] leading-[1.1] sm:text-5xl md:text-6xl font-serif font-bold text-[#1F1E1D] tracking-tight">
+              Индивидуальное{' '}
+              <span className="block sm:inline">обучение</span>{' '}
+              <span className="italic text-[#C85A32] font-normal block mt-1 sm:inline sm:mt-0">
+                без слёз и стресса
+              </span>
             </h1>
 
             {/* Описание */}
-            <p className="text-base sm:text-lg text-[#595652] leading-relaxed max-w-2xl">
+            <p className="text-sm sm:text-base md:text-lg text-[#595652] leading-relaxed max-w-2xl">
               Подготовка к 1 классу и репетиторство для учеников 1–4 классов. 
               Интерактивные онлайн-уроки с использованием нейропедагогического подхода для уверенного старта в школе.
             </p>
 
             {/* Быстрые фичи */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <div className="flex items-center gap-2.5 text-sm text-[#1F1E1D] font-medium">
-                <CheckCircle2 className="w-4 h-4 text-[#C85A32] shrink-0" />
-                <span>Гибкое онлайн-расписание</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-sm text-[#1F1E1D] font-medium">
-                <CheckCircle2 className="w-4 h-4 text-[#C85A32] shrink-0" />
-                <span>Диагностика перед стартом</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-sm text-[#1F1E1D] font-medium">
-                <CheckCircle2 className="w-4 h-4 text-[#C85A32] shrink-0" />
-                <span>Оплата по СБП после выбора слота</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-sm text-[#1F1E1D] font-medium">
-                <CheckCircle2 className="w-4 h-4 text-[#C85A32] shrink-0" />
-                <span>Поддержка родителю в Telegram</span>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 pt-1 sm:pt-2">
+              {[
+                'Гибкое онлайн-расписание',
+                'Диагностика перед стартом',
+                'Оплата по СБП после выбора слота',
+                'Поддержка родителю в Telegram',
+              ].map((feature, idx) => (
+                <div key={idx} className="flex items-center gap-2 sm:gap-2.5 text-xs sm:text-sm text-[#1F1E1D] font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#C85A32] shrink-0" />
+                  <span>{feature}</span>
+                </div>
+              ))}
             </div>
 
             {/* CTA Кнопки */}
-            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <div className="pt-3 sm:pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
               <button
                 onClick={onOpenBooking}
-                className="bg-[#C85A32] hover:bg-[#b04b27] text-white text-base font-semibold px-7 py-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow-lg hover:translate-y-[-2px] transition-all flex items-center justify-center gap-3 cursor-pointer group"
+                className="bg-[#C85A32] hover:bg-[#b04b27] active:scale-[0.97] text-white text-sm sm:text-base font-semibold px-6 sm:px-7 py-3.5 sm:py-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow-lg hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2.5 sm:gap-3 cursor-pointer group"
               >
-                <Calendar className="w-5 h-5" />
+                <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>Выбрать время и записаться</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-1 transition-transform" />
               </button>
 
               <a
                 href="#programs"
-                className="bg-white hover:bg-[#FAF8F5] text-[#1F1E1D] text-base font-semibold px-6 py-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow hover:translate-y-[-2px] transition-all flex items-center justify-center"
+                className="bg-white hover:bg-[#FAF8F5] active:scale-[0.97] text-[#1F1E1D] text-sm sm:text-base font-semibold px-5 sm:px-6 py-3.5 sm:py-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow hover:translate-y-[-2px] transition-all flex items-center justify-center"
               >
                 Смотреть программы
               </a>
@@ -87,69 +85,75 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
             transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-5 relative"
           >
-            {/* Декоративная рамка Neo-Brutalism */}
-            <div className="relative bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 sm:p-8 hard-shadow-lg floating-card space-y-6">
+            {/* Карточка педагога */}
+            <div className="relative bg-white border-2 border-[#1F1E1D] rounded-2xl p-5 sm:p-6 md:p-8 hard-shadow-lg floating-card space-y-5 sm:space-y-6">
               
-              {/* Верхняя панель карточки */}
-              <div className="flex items-center justify-between border-b-2 border-[#1F1E1D]/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border-2 border-[#1F1E1D] flex items-center justify-center font-bold text-[#C85A32] text-xl">
+              {/* Верхняя панель */}
+              <div className="flex items-center justify-between border-b-2 border-[#1F1E1D]/10 pb-3.5 sm:pb-4 gap-3">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#FAF8F5] border-2 border-[#1F1E1D] flex items-center justify-center font-bold text-[#C85A32] text-lg sm:text-xl shrink-0">
                     👩‍🏫
                   </div>
-                  <div>
-                    <h3 className="font-bold text-lg text-[#1F1E1D] leading-none">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-base sm:text-lg text-[#1F1E1D] leading-none truncate">
                       {TEACHER_INFO.name}
                     </h3>
-                    <p className="text-xs text-[#595652] font-mono pt-1">
+                    <p className="text-[10px] sm:text-xs text-[#595652] font-mono pt-0.5 sm:pt-1 truncate">
                       Педагог дошкольного & начального образования
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Метрики */}
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
-                  <div className="font-serif font-bold text-2xl text-[#C85A32]">
-                    {TEACHER_INFO.experience_years} лет
+              {/* Метрики — адаптивная сетка */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
+                <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
+                  <div className="font-serif font-bold text-xl sm:text-2xl text-[#C85A32] leading-tight">
+                    {TEACHER_INFO.experience_years}
                   </div>
-                  <div className="text-[11px] text-[#595652] font-mono mt-1">Опыт работы</div>
+                  <div className="text-[9px] sm:text-[11px] text-[#595652] font-mono mt-0.5 sm:mt-1 leading-tight">
+                    лет опыта
+                  </div>
                 </div>
-                <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
-                  <div className="font-serif font-bold text-2xl text-[#2E5A44]">
+                <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
+                  <div className="font-serif font-bold text-xl sm:text-2xl text-[#2E5A44] leading-tight">
                     {TEACHER_INFO.students_count}
                   </div>
-                  <div className="text-[11px] text-[#595652] font-mono mt-1">Учеников</div>
+                  <div className="text-[9px] sm:text-[11px] text-[#595652] font-mono mt-0.5 sm:mt-1 leading-tight">
+                    учеников
+                  </div>
                 </div>
-                <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
-                  <div className="font-serif font-bold text-2xl text-[#1F1E1D]">
+                <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
+                  <div className="font-serif font-bold text-xl sm:text-2xl text-[#1F1E1D] leading-tight">
                     {TEACHER_INFO.satisfaction_rate}
                   </div>
-                  <div className="text-[11px] text-[#595652] font-mono mt-1">Отзывов на 5★</div>
+                  <div className="text-[9px] sm:text-[11px] text-[#595652] font-mono mt-0.5 sm:mt-1 leading-tight">
+                    отзывов 5★
+                  </div>
                 </div>
               </div>
 
               {/* Образование */}
               <div className="space-y-2">
-                <h4 className="text-xs font-mono uppercase font-bold tracking-wider text-[#595652]">
+                <h4 className="text-[10px] sm:text-xs font-mono uppercase font-bold tracking-wider text-[#595652]">
                   Квалификация и образование:
                 </h4>
-                <ul className="space-y-1.5 text-xs text-[#1F1E1D]">
+                <ul className="space-y-1 sm:space-y-1.5 text-[11px] sm:text-xs text-[#1F1E1D]">
                   {TEACHER_INFO.education.map((item, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <span className="text-[#C85A32] font-bold">•</span>
-                      <span>{item}</span>
+                    <li key={index} className="flex items-start gap-1.5 sm:gap-2">
+                      <span className="text-[#C85A32] font-bold shrink-0">•</span>
+                      <span className="leading-snug">{item}</span>
                     </li>
                   ))}
                 </ul>
               </div>
 
-              {/* Интерактивная плашка статуса */}
-              <div className="bg-[#2E5A44]/10 border border-[#2E5A44]/30 rounded-xl p-3.5 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-[#2E5A44] font-medium">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                  <span>Доступно 5 свободных слотов на эту неделю</span>
-                </div>
+              {/* Статус */}
+              <div className="bg-[#2E5A44]/10 border border-[#2E5A44]/30 rounded-xl p-3 sm:p-3.5 flex items-center gap-2 text-[11px] sm:text-xs">
+                <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                <span className="text-[#2E5A44] font-medium leading-snug">
+                  Доступно 5 свободных слотов на эту неделю
+                </span>
               </div>
 
             </div>

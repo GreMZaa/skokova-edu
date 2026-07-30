@@ -62,6 +62,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   const [userId, setUserId] = useState('');
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
   // Загрузка слотов и данных родителя при открытии модального окна
   useEffect(() => {
     if (isOpen) {
@@ -260,46 +270,52 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#1F1E1D]/60 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6 bg-[#1F1E1D]/60 backdrop-blur-sm">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="relative w-full max-w-2xl bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-3xl hard-shadow-lg overflow-hidden my-auto max-h-[90vh] flex flex-col"
+        initial={{ opacity: 0, y: 40, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 40, scale: 0.98 }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full sm:max-w-2xl bg-[#FAF8F5] border-2 border-[#1F1E1D] sm:rounded-3xl rounded-t-3xl hard-shadow-lg overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]"
       >
+        {/* Мобильная «ручка» для визуального affordance slide-down */}
+        <div className="sm:hidden flex justify-center py-2">
+          <div className="w-10 h-1 rounded-full bg-[#1F1E1D]/20" />
+        </div>
+
         {/* Шапка модального окна */}
-        <div className="flex items-center justify-between p-5 border-b-2 border-[#1F1E1D]/10 bg-white">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-[#C85A32] text-white flex items-center justify-center font-bold text-sm hard-shadow">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b-2 border-[#1F1E1D]/10 bg-white shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[#C85A32] text-white flex items-center justify-center font-bold text-xs sm:text-sm hard-shadow shrink-0">
               {step === 4 ? '✓' : step}
             </div>
-            <div>
-              <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
-                {step === 1 && 'Шаг 1: Выбор программы и времени'}
-                {step === 2 && 'Шаг 2: Анкетные данные ребёнка'}
+            <div className="min-w-0">
+              <h3 className="font-serif font-bold text-base sm:text-lg text-[#1F1E1D] truncate">
+                {step === 1 && 'Программа и время'}
+                {step === 2 && 'Данные ребёнка'}
                 {step === 4 && 'Заявка забронирована!'}
               </h3>
-              <p className="text-xs text-[#595652] font-mono">
-                {step === 1 && 'Выберите подходящий день и свободный слот'}
-                {step === 2 && 'Укажите информацию для подготовки к занятию'}
-                {step === 4 && 'Перейдите в кабинет семьи для проведения оплаты'}
+              <p className="text-[10px] sm:text-xs text-[#595652] font-mono truncate">
+                {step === 1 && 'Выберите подходящий день и слот'}
+                {step === 2 && 'Информация для подготовки к занятию'}
+                {step === 4 && 'Перейдите в кабинет для оплаты'}
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] bg-white text-[#1F1E1D] transition-colors cursor-pointer"
+            className="p-2 rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] bg-white text-[#1F1E1D] transition-colors cursor-pointer active:scale-95 shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Тело модального окна */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 flex-1 overscroll-contain">
           
           {errorMsg && (
-            <div className="p-3.5 rounded-2xl border-2 border-red-500/30 bg-red-50 text-red-700 text-xs font-medium flex items-center gap-2">
+            <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl border-2 border-red-500/30 bg-red-50 text-red-700 text-[11px] sm:text-xs font-medium flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{errorMsg}</span>
             </div>
@@ -307,29 +323,29 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
           {/* ШАГ 1: Выбор программы и времени */}
           {step === 1 && (
-            <div className="space-y-6">
+            <div className="space-y-5 sm:space-y-6">
               
               {/* Выбор программы */}
               <div className="space-y-2">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                <label className="text-[10px] sm:text-xs font-mono font-bold uppercase text-[#595652]">
                   Выберите программу:
                 </label>
-                <div className="grid grid-cols-1 gap-2.5">
+                <div className="grid grid-cols-1 gap-2 sm:gap-2.5">
                   {SERVICES.map((s) => (
                     <button
                       key={s.id}
                       onClick={() => setSelectedService(s)}
-                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
+                      className={`p-3 sm:p-3.5 rounded-xl sm:rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between active:scale-[0.98] ${
                         selectedService.id === s.id
                           ? 'border-[#C85A32] bg-[#C85A32]/5 hard-shadow'
                           : 'border-[#1F1E1D]/20 bg-[#FAF8F5] hover:border-[#1F1E1D]'
                       }`}
                     >
-                      <div>
-                        <div className="font-bold text-sm text-[#1F1E1D]">{s.title}</div>
-                        <div className="text-xs text-[#595652]">{s.duration_minutes} минут</div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs sm:text-sm text-[#1F1E1D] truncate">{s.title}</div>
+                        <div className="text-[10px] sm:text-xs text-[#595652]">{s.duration_minutes} минут</div>
                       </div>
-                      <div className="font-serif font-bold text-base text-[#C85A32]">
+                      <div className="font-serif font-bold text-sm sm:text-base text-[#C85A32] shrink-0 ml-2">
                         {s.price.toLocaleString('ru-RU')} ₽
                       </div>
                     </button>
@@ -339,16 +355,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
               {/* Выбор дня */}
               <div className="space-y-2">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                <label className="text-[10px] sm:text-xs font-mono font-bold uppercase text-[#595652]">
                   Выберите дату:
                 </label>
                 {loadingSlots ? (
-                  <div className="flex items-center justify-center p-4 text-xs font-mono text-[#595652] gap-2">
+                  <div className="flex items-center justify-center p-4 text-[11px] sm:text-xs font-mono text-[#595652] gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-[#C85A32]" />
                     <span>Загрузка расписания...</span>
                   </div>
                 ) : (
-                  <div className="flex gap-2 overflow-x-auto pb-2">
+                  <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 snap-x scrollbar-hide">
                     {availableDates.map((item) => (
                       <button
                         key={item.dateStr}
@@ -356,7 +372,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                           setSelectedDate(item.dateStr);
                           setSelectedSlot(null);
                         }}
-                        className={`px-3.5 py-2 rounded-xl border-2 text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
+                        className={`px-3 sm:px-3.5 py-2 rounded-lg sm:rounded-xl border-2 text-[11px] sm:text-xs font-medium whitespace-nowrap transition-all cursor-pointer snap-center active:scale-95 ${
                           selectedDate === item.dateStr
                             ? 'border-[#1F1E1D] bg-[#1F1E1D] text-white hard-shadow'
                             : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
@@ -376,10 +392,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                 return (
                   <div className="space-y-2">
-                    <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                    <label className="text-[10px] sm:text-xs font-mono font-bold uppercase text-[#595652]">
                       Свободное время ({activeDate}):
                     </label>
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 sm:gap-2">
                       {currentGroup?.slots?.map((slot) => (
                         <button
                           key={slot.id}
@@ -389,7 +405,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             }
                             setSelectedSlot(slot);
                           }}
-                          className={`py-2.5 px-3 rounded-xl border-2 text-xs font-bold text-center transition-all cursor-pointer ${
+                          className={`py-2.5 px-2 sm:px-3 rounded-lg sm:rounded-xl border-2 text-[11px] sm:text-xs font-bold text-center transition-all cursor-pointer active:scale-95 ${
                             selectedSlot?.id === slot.id
                               ? 'border-[#C85A32] bg-[#C85A32] text-white hard-shadow'
                               : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
@@ -403,12 +419,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 );
               })()}
 
-              <div className="pt-4">
+              <div className="pt-2 sm:pt-4">
                 <button
                   onClick={handleGoToStep2}
-                  className="w-full bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full bg-[#C85A32] hover:bg-[#b04b27] active:scale-[0.98] text-white text-xs sm:text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <span>Продолжить заполнение анкеты</span>
+                  <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
 
@@ -419,28 +436,28 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           {step === 2 && (
             <form onSubmit={handleGoToPaymentAndCabinet} className="space-y-4">
               
-              <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/10 text-xs flex items-center justify-between">
-                <span className="font-medium text-[#1F1E1D]">
+              <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-lg sm:rounded-xl border border-[#1F1E1D]/10 text-[10px] sm:text-xs flex items-center justify-between gap-2">
+                <span className="font-medium text-[#1F1E1D] truncate">
                   {selectedService.title} • {selectedDate}, {selectedSlot?.time}
                 </span>
-                <span className="font-serif font-bold text-[#C85A32]">{selectedService.price} ₽</span>
+                <span className="font-serif font-bold text-[#C85A32] shrink-0">{selectedService.price} ₽</span>
               </div>
 
               {userId ? (
-                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-500/30 text-emerald-800 text-xs font-mono font-medium flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Вы авторизованы как {parentEmail || 'родитель'}. Заявка появится в вашем кабинете!</span>
+                <div className="p-2.5 rounded-lg sm:rounded-xl bg-emerald-50 border border-emerald-500/30 text-emerald-800 text-[10px] sm:text-xs font-mono font-medium flex items-center gap-2">
+                  <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
+                  <span className="truncate">Вы авторизованы как {parentEmail || 'родитель'}. Заявка появится в кабинете!</span>
                 </div>
               ) : (
-                <div className="p-2.5 rounded-xl bg-[#C85A32]/10 border border-[#C85A32]/30 text-[#C85A32] text-xs font-mono font-medium flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 shrink-0" />
-                  <span>При клике «Перейти к оплате» ваш Личный кабинет создаётся автоматически!</span>
+                <div className="p-2.5 rounded-lg sm:rounded-xl bg-[#C85A32]/10 border border-[#C85A32]/30 text-[#C85A32] text-[10px] sm:text-xs font-mono font-medium flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="leading-snug">Личный кабинет создаётся автоматически!</span>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-mono font-semibold text-[#595652]">
+                  <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
                     Имя родителя *
                   </label>
                   <input
@@ -450,12 +467,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     placeholder="Например, Ольга"
                     value={parentName}
                     onChange={(e) => setParentName(capitalizeFirstLetter(e.target.value))}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
+                    className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-mono font-semibold text-[#595652]">
+                  <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
                     Телефон для связи *
                   </label>
                   <input
@@ -467,15 +484,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       if (!phone) setPhone('+7 (');
                     }}
                     onChange={(e) => setPhone(formatRussianPhone(e.target.value))}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono"
+                    className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono bg-white"
                   />
                 </div>
               </div>
 
               {!userId && (
                 <div className="space-y-1">
-                  <label className="text-xs font-mono font-semibold text-[#595652]">
-                    Электронная почта (Email для Личного кабинета) *
+                  <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
+                    Email для Личного кабинета *
                   </label>
                   <input
                     type="email"
@@ -483,15 +500,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     placeholder="olga@mail.ru"
                     value={parentEmail}
                     onChange={(e) => setParentEmail(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono"
+                    className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono bg-white"
                   />
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Выбор имени ребёнка из списка */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* Выбор имени ребёнка */}
                 <div className="space-y-1">
-                  <label className="text-xs font-mono font-semibold text-[#595652]">
+                  <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
                     Имя ребёнка *
                   </label>
                   {savedChildren.length > 0 && !isCustomChild ? (
@@ -508,7 +525,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                           if (found) setChildGrade(found.grade);
                         }
                       }}
-                      className="w-full px-3.5 py-2.5 text-sm font-bold rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white text-[#1F1E1D]"
+                      className="w-full px-3 sm:px-3.5 py-2.5 text-sm font-bold rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white text-[#1F1E1D]"
                     >
                       {savedChildren.map((c) => (
                         <option key={c.id} value={c.name}>
@@ -526,7 +543,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         placeholder="Например, Артём"
                         value={childName}
                         onChange={(e) => setChildName(capitalizeFirstLetter(e.target.value))}
-                        className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
+                        className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white"
                       />
                       {savedChildren.length > 0 && (
                         <button
@@ -548,13 +565,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-mono font-semibold text-[#595652]">
+                  <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
                     Класс / Возраст *
                   </label>
                   <select
                     value={childGrade}
                     onChange={(e) => setChildGrade(e.target.value as GradeLevel)}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white"
+                    className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white"
                   >
                     {(Object.keys(GRADE_LABELS) as GradeLevel[]).map((key) => (
                       <option key={key} value={key}>
@@ -566,8 +583,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-mono font-semibold text-[#595652]">
-                  Telegram (для отправки ссылки на урок)
+                <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
+                  Telegram (для ссылки на урок)
                 </label>
                 <input
                   type="text"
@@ -577,13 +594,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     if (!telegramHandle) setTelegramHandle('@');
                   }}
                   onChange={(e) => setTelegramHandle(formatTelegramHandle(e.target.value))}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono"
+                  className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono bg-white"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-mono font-semibold text-[#595652]">
-                  Комментарий (какие есть сложности или на что обратить внимание)
+                <label className="text-[10px] sm:text-xs font-mono font-semibold text-[#595652]">
+                  Комментарий (сложности или на что обратить внимание)
                 </label>
                 <textarea
                   rows={2}
@@ -591,45 +608,48 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   placeholder="Плохо читает по слогам, нужно подтянуть решения задач..."
                   value={comment}
                   onChange={(e) => setComment(capitalizeFirstLetter(e.target.value))}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
+                  className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white"
                 />
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-start gap-2.5 pt-1 sm:pt-2">
                 <input
                   type="checkbox"
                   id="consent"
                   checked={consentChecked}
                   onChange={(e) => setConsentChecked(e.target.checked)}
-                  className="w-4 h-4 accent-[#C85A32] rounded cursor-pointer"
+                  className="w-4 h-4 accent-[#C85A32] rounded cursor-pointer mt-0.5 shrink-0"
                 />
-                <label htmlFor="consent" className="text-xs text-[#595652] cursor-pointer">
+                <label htmlFor="consent" className="text-[10px] sm:text-xs text-[#595652] cursor-pointer leading-snug">
                   Согласен(на) на обработку персональных данных (ФЗ-152)
                 </label>
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-2.5 sm:gap-3 pt-3 sm:pt-4">
                 <button
                   type="button"
                   onClick={() => {
                     setStep(1);
                   }}
-                  className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
+                  className="px-3.5 sm:px-4 py-3 rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] active:scale-95 text-[11px] sm:text-xs font-bold text-[#1F1E1D] transition-all cursor-pointer"
                 >
                   Назад
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] disabled:opacity-50 text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] active:scale-[0.98] disabled:opacity-50 text-white text-xs sm:text-sm font-semibold py-3.5 px-4 rounded-lg sm:rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Создание брони и кабинета...</span>
+                      <span>Создание...</span>
                     </>
                   ) : (
-                    <span>Перейти к оплате ➔</span>
+                    <>
+                      <span>Перейти к оплате</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </>
                   )}
                 </button>
               </div>
@@ -637,46 +657,51 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             </form>
           )}
 
-          {/* ШАГ 4: Успешное бронирование и переход в Личный Кабинет */}
+          {/* ШАГ 4: Успешное бронирование */}
           {step === 4 && (
-            <div className="text-center py-6 space-y-5">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center hard-shadow border-2 border-[#1F1E1D]">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
+            <div className="text-center py-4 sm:py-6 space-y-4 sm:space-y-5">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', duration: 0.5 }}
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center hard-shadow border-2 border-[#1F1E1D]"
+              >
+                <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10" />
+              </motion.div>
 
               <div>
-                <h3 className="font-serif font-extrabold text-2xl text-[#1F1E1D]">
+                <h3 className="font-serif font-extrabold text-xl sm:text-2xl text-[#1F1E1D]">
                   Заявка успешно забронирована!
                 </h3>
-                <p className="text-xs font-mono text-[#595652] mt-1">
+                <p className="text-[10px] sm:text-xs font-mono text-[#595652] mt-1">
                   Урок: {selectedService.title} • {selectedDate}, {selectedSlot?.time}
                 </p>
               </div>
 
               {createdAccountInfo && (
-                <div className="p-4 bg-[#C85A32]/10 border-2 border-[#C85A32] rounded-2xl text-left space-y-2 max-w-md mx-auto hard-shadow">
-                  <div className="font-bold text-xs text-[#1F1E1D] flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-[#C85A32]" />
-                    <span>🎉 Личный кабинет семьи создан и активирован!</span>
+                <div className="p-3.5 sm:p-4 bg-[#C85A32]/10 border-2 border-[#C85A32] rounded-xl sm:rounded-2xl text-left space-y-1.5 sm:space-y-2 max-w-md mx-auto hard-shadow">
+                  <div className="font-bold text-[11px] sm:text-xs text-[#1F1E1D] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#C85A32]" />
+                    <span>🎉 Личный кабинет создан!</span>
                   </div>
-                  <div className="text-xs text-[#595652] space-y-1 font-mono">
-                    <div>Логин для входа: <strong className="text-[#1F1E1D]">{createdAccountInfo.email}</strong></div>
+                  <div className="text-[10px] sm:text-xs text-[#595652] space-y-0.5 sm:space-y-1 font-mono">
+                    <div>Логин: <strong className="text-[#1F1E1D]">{createdAccountInfo.email}</strong></div>
                     <div>Пароль: <strong className="text-[#1F1E1D]">Ваш номер телефона</strong></div>
                   </div>
                 </div>
               )}
 
-              <p className="text-xs text-[#595652] max-w-md mx-auto leading-relaxed">
-                Ваша заявка со статусом <strong>«⏳ Ожидает оплаты»</strong> уже добавлена в ваш Личный кабинет. Для оплаты по СБП и загрузки чека нажмите на кнопку ниже:
+              <p className="text-[11px] sm:text-xs text-[#595652] max-w-md mx-auto leading-relaxed px-2 sm:px-0">
+                Ваша заявка со статусом <strong>«⏳ Ожидает оплаты»</strong> уже в Личном кабинете. Для оплаты по СБП нажмите кнопку ниже:
               </p>
 
-              <div className="pt-2">
+              <div className="pt-1 sm:pt-2">
                 <button
                   onClick={handleNavigateToDashboard}
-                  className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono font-extrabold text-sm hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                  className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-[#C85A32] hover:bg-[#b04b27] active:scale-[0.97] text-white font-mono font-extrabold text-xs sm:text-sm hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
                 >
-                  <span>Перейти в Личный кабинет ➔</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>Перейти в Личный кабинет</span>
+                  <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Cormorant_Garamond, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 
@@ -20,6 +20,14 @@ const monoFont = JetBrains_Mono({
   variable: '--font-mono',
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#FAF8F5',
+};
+
 export const metadata: Metadata = {
   title: 'Скокова Юлия Павловна | Подготовка к школе & Репетитор 1-4 классов',
   description: 'Частный педагог высшей категории. Индивидуальные онлайн-уроки по подготовке к 1 классу и предметам начальной школы. Запись онлайн.',
@@ -38,7 +46,7 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`${displaySerif.variable} ${bodyFont.variable} ${monoFont.variable}`}>
       <body className="antialiased bg-[#FAF8F5] text-[#1F1E1D] selection:bg-[#C85A32] selection:text-white relative">
-        <div className="fixed inset-0 pointer-events-none z-50 bg-noise opacity-40" />
+        <div className="fixed inset-0 pointer-events-none z-30 bg-noise opacity-40" />
         {children}
       </body>
     </html>
