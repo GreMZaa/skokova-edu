@@ -199,8 +199,21 @@ export default function AdminPage() {
     setEditStatus(b.status);
     setEditServiceTitle(b.service_title || 'Онлайн-занятие (Индивидуально)');
     setEditPrice(b.price || (b.service_title?.includes('Оффлайн') ? 800 : 600));
-    setEditDateStr(b.dateStr || '');
-    setEditTime(b.timeSlot || '14:00');
+
+    // Очищаем строку даты от возможного дублирования времени
+    let cleanDateStr = b.dateStr || '';
+    let extractedTime = b.timeSlot || '14:00';
+
+    if (cleanDateStr.includes(',')) {
+      const parts = cleanDateStr.split(',');
+      if (parts.length >= 2 && /\d{1,2}:\d{2}/.test(parts[parts.length - 1])) {
+        extractedTime = parts[parts.length - 1].trim();
+        cleanDateStr = parts.slice(0, parts.length - 1).join(',').trim();
+      }
+    }
+
+    setEditDateStr(cleanDateStr);
+    setEditTime(extractedTime);
     setEditParent(capitalizeFirstLetter(b.parent_name || ''));
     setEditPhone(formatRussianPhone(b.phone || ''));
     setEditTelegram(formatTelegramHandle(b.telegram_handle || ''));
@@ -225,14 +238,12 @@ export default function AdminPage() {
     }
   };
 
-  // Сохранение отредактированных данных заявки в Supabase
+  // Сохранение отредактированных данных заявки в Supabase DB
   const handleSaveEdit = async () => {
     if (!editingBooking) return;
     setSavingEdit(true);
 
     try {
-      const finalDateDisplay = editDateStr ? `${editDateStr}, ${editTime}` : editTime;
-
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -248,33 +259,14 @@ export default function AdminPage() {
           child_grade: editChildGrade,
           comment: editComment,
           admin_notes: editAdminNotes,
+          dateISO: editDateISO,
           dateStr: editDateStr,
           timeSlot: editTime,
         }),
       });
 
       if (res.ok) {
-        setBookings((prev) =>
-          prev.map((b) =>
-            b.id === editingBooking.id
-              ? {
-                  ...b,
-                  status: editStatus,
-                  service_title: editServiceTitle,
-                  price: editPrice,
-                  parent_name: editParent,
-                  phone: editPhone,
-                  telegram_handle: editTelegram,
-                  child_name: editChild,
-                  child_grade: editChildGrade,
-                  comment: editComment,
-                  admin_notes: editAdminNotes,
-                  dateStr: finalDateDisplay,
-                  timeSlot: editTime,
-                }
-              : b
-          )
-        );
+        await fetchRealBookings();
         setEditingBooking(null);
       }
     } catch (e) {

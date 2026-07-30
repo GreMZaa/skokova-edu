@@ -1,6 +1,32 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 
+function getSamaraISOString(dateISO: string, timeStr: string): { startISO: string; endISO: string } | null {
+  if (!dateISO || !timeStr) return null;
+  const timeParts = timeStr.trim().split(':');
+  if (timeParts.length < 2) return null;
+
+  const hour = parseInt(timeParts[0], 10);
+  const minute = parseInt(timeParts[1], 10);
+  if (isNaN(hour) || isNaN(minute)) return null;
+
+  const dateParts = dateISO.trim().split('-');
+  if (dateParts.length < 3) return null;
+
+  const year = parseInt(dateParts[0], 10);
+  const month = parseInt(dateParts[1], 10) - 1;
+  const day = parseInt(dateParts[2], 10);
+
+  // Часовой пояс Самары/Тольятти UTC+4. В UTC время = hour - 4
+  const startDate = new Date(Date.UTC(year, month, day, hour - 4, minute, 0));
+  const endDate = new Date(startDate.getTime() + 40 * 60 * 1000); // Урок 40 минут
+
+  return {
+    startISO: startDate.toISOString(),
+    endISO: endDate.toISOString(),
+  };
+}
+
 // GET: Получение всех реальных заявок из таблицы bookings в Supabase
 export async function GET() {
   try {
@@ -43,7 +69,7 @@ export async function GET() {
   }
 }
 
-// PATCH: Полное редактирование заявки администратором в Supabase
+// PATCH: Полное редактирование заявки администратором с автоматическим переносом и резервированием слота
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
@@ -59,7 +85,7 @@ export async function PATCH(req: Request) {
       child_grade,
       comment,
       admin_notes,
-      dateStr,
+      dateISO,
       timeSlot,
     } = body;
 
@@ -82,9 +108,51 @@ export async function PATCH(req: Request) {
       .eq('id', id)
       .single();
 
+    const oldSlotId = oldBooking?.slot_id;
+    let newSlotId: string | null = null;
+
+    // 1. Если передана новая дата и время — ищем или создаем слот и БРОНИРУЕМ его
+    if (dateISO && timeSlot) {
+      const times = getSamaraISOString(dateISO, timeSlot);
+      if (times) {
+        let { data: slot } = await supabase
+          .from('time_slots')
+          .select('*')
+          .eq('start_time', times.startISO)
+          .maybeSingle();
+
+        if (!slot) {
+          const { data: createdSlot } = await supabase
+            .from('time_slots')
+            .insert({
+              start_time: times.startISO,
+              end_time: times.endISO,
+              is_booked: true,
+            })
+            .select()
+            .single();
+          slot = createdSlot;
+        } else {
+          await supabase
+            .from('time_slots')
+            .update({ is_booked: true, locked_until: null })
+            .eq('id', slot.id);
+        }
+
+        if (slot?.id) {
+          newSlotId = slot.id;
+        }
+      }
+    }
+
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
+
+    if (newSlotId) {
+      updates.slot_id = newSlotId;
+      if (!status) updates.status = 'rescheduled';
+    }
 
     if (status !== undefined) updates.status = status;
     if (service_title !== undefined) updates.service_title = service_title;
@@ -106,29 +174,42 @@ export async function PATCH(req: Request) {
 
     if (error) throw error;
 
-    if (status === 'cancelled' && oldBooking?.slot_id) {
+    // 2. Если перенесли на другой слот — ОСВОБОЖДАЕМ старый слот для других клиентов!
+    if (newSlotId && oldSlotId && oldSlotId !== newSlotId) {
       await supabase
         .from('time_slots')
         .update({ is_booked: false, locked_until: null })
-        .eq('id', oldBooking.slot_id);
-    } else if (status === 'confirmed' && oldBooking?.slot_id) {
+        .eq('id', oldSlotId);
+    }
+
+    // 3. Если заявка отклонена — освобождаем текущий слот
+    const targetStatus = status || updates.status;
+    const activeSlotId = newSlotId || oldSlotId;
+
+    if (targetStatus === 'cancelled' && activeSlotId) {
       await supabase
         .from('time_slots')
-        .update({ is_booked: true })
-        .eq('id', oldBooking.slot_id);
+        .update({ is_booked: false, locked_until: null })
+        .eq('id', activeSlotId);
+    } else if (targetStatus === 'confirmed' && activeSlotId) {
+      await supabase
+        .from('time_slots')
+        .update({ is_booked: true, locked_until: null })
+        .eq('id', activeSlotId);
     }
 
     return NextResponse.json({
       success: true,
       booking: updatedData,
-      message: 'Заявка успешно обновлена в Supabase',
+      message: 'Заявка и расписание слотов успешно обновлены в Supabase DB',
     });
   } catch (error: any) {
+    console.error('Admin PATCH error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// DELETE: Удаление заявки из Supabase
+// DELETE: Удаление заявки из Supabase с освобождением слота
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
