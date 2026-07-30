@@ -49,6 +49,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [isCustomChild, setIsCustomChild] = useState(false);
 
   // Оплата и чек
+  const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -97,7 +98,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const savedDraft = sessionStorage.getItem(DRAFT_STORAGE_KEY);
       if (savedDraft) {
         const parsed = JSON.parse(savedDraft);
-        // Проверяем, что черновик создан менее 15 минут назад
         if (parsed && Date.now() - parsed.timestamp < 15 * 60 * 1000) {
           includeSlotId = parsed.selectedSlot?.id || null;
           if (parsed.selectedService) {
@@ -112,6 +112,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           if (parsed.childName) setChildName(parsed.childName);
           if (parsed.childGrade) setChildGrade(parsed.childGrade);
           if (parsed.comment) setComment(parsed.comment);
+          if (parsed.currentBookingId) setCurrentBookingId(parsed.currentBookingId);
           if (parsed.step && parsed.step > 1 && parsed.step <= 3) {
             setStep(parsed.step);
           }
@@ -136,7 +137,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  const saveDraftToSession = (nextStep: 1 | 2 | 3) => {
+  const saveDraftToSession = (nextStep: 1 | 2 | 3, bookingId?: string) => {
     try {
       const draftData = {
         step: nextStep,
@@ -149,6 +150,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         childName,
         childGrade,
         comment,
+        currentBookingId: bookingId || currentBookingId,
         timestamp: Date.now(),
       };
       sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
@@ -183,28 +185,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  const handleGoToStep2 = async () => {
+  const handleGoToStep2 = () => {
     if (!selectedSlot) {
       setErrorMsg('Пожалуйста, выберите удобное время в календаре');
       return;
     }
     setErrorMsg('');
-    
-    try {
-      await fetch('/api/slots/lock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slot_id: selectedSlot.id }),
-      });
-    } catch (e) {
-      console.error('Slot lock error:', e);
-    }
-
-    saveDraftToSession(2);
     setStep(2);
   };
 
-  const handleGoToStep3 = (e: React.FormEvent) => {
+  // Переход к оплате: Создает заказ в админке со статусом 'pending_payment' и резервирует слот
+  const handleGoToStep3 = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!parentName.trim() || !phone.trim() || !childName.trim()) {
       setErrorMsg('Заполните обязательные поля: Имя родителя, Телефон и Имя ребёнка');
@@ -212,16 +203,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
     if (!consentChecked) {
       setErrorMsg('Необходимо согласие на обработку персональных данных');
-      return;
-    }
-    setErrorMsg('');
-    saveDraftToSession(3);
-    setStep(3);
-  };
-
-  const handleSubmitBooking = async () => {
-    if (!receiptFile) {
-      setErrorMsg('Пожалуйста, загрузите файл чека или скриншот перевода');
       return;
     }
 
@@ -242,14 +223,62 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       formData.append('child_name', childName);
       formData.append('child_grade', childGrade);
       formData.append('comment', comment);
+      formData.append('status', 'pending_payment');
       if (userId) {
         formData.append('user_id', userId);
       }
 
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось создать предварительную заявку');
+      }
+
+      setCurrentBookingId(data.booking_id);
+      saveDraftToSession(3, data.booking_id);
+      setStep(3);
+    } catch (err: any) {
+      console.error('Pending booking creation error:', err);
+      setErrorMsg(err.message || 'Ошибка создания заявки. Попробуйте еще раз.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Отправка чека на Шаге 3
+  const handleSubmitBooking = async () => {
+    if (!receiptFile) {
+      setErrorMsg('Пожалуйста, загрузите файл чека или скриншот перевода');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      const formData = new FormData();
+      formData.append('booking_id', currentBookingId || '');
+      formData.append('slot_id', selectedSlot?.id || '');
+      formData.append('service_title', selectedService.title);
+      formData.append('price', selectedService.price.toString());
+      formData.append('selected_date', selectedDate);
+      formData.append('selected_slot_time', selectedSlot?.time || '');
+
+      formData.append('parent_name', parentName);
+      formData.append('phone', phone);
+      formData.append('telegram_handle', telegramHandle);
+      formData.append('child_name', childName);
+      formData.append('child_grade', childGrade);
+      formData.append('comment', comment);
+
       formData.append('receipt_file', receiptFile);
 
       const res = await fetch('/api/bookings', {
-        method: 'POST',
+        method: 'PATCH',
         body: formData,
       });
 
@@ -587,7 +616,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    saveDraftToSession(1);
                     setStep(1);
                   }}
                   className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
@@ -596,9 +624,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] disabled:opacity-50 text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  Перейти к оплате реквизитов
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Создание брони...</span>
+                    </>
+                  ) : (
+                    <span>Перейти к оплате реквизитов ➔</span>
+                  )}
                 </button>
               </div>
 
@@ -679,7 +715,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    saveDraftToSession(2);
                     setStep(2);
                   }}
                   className="px-4 py-3.5 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"

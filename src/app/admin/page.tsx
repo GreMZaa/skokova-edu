@@ -343,6 +343,18 @@ export default function AdminPage() {
           >
             Все заявки ({bookings.length})
           </button>
+
+          <button
+            onClick={() => setFilterStatus('pending_payment')}
+            className={`px-4 py-2 rounded-xl border-2 text-xs font-semibold cursor-pointer ${
+              filterStatus === 'pending_payment'
+                ? 'border-amber-600 bg-amber-600 text-white hard-shadow'
+                : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D]'
+            }`}
+          >
+            ⏳ Ожидают оплаты ({bookings.filter((b) => b.status === 'pending_payment').length})
+          </button>
+
           <button
             onClick={() => setFilterStatus('receipt_uploaded')}
             className={`px-4 py-2 rounded-xl border-2 text-xs font-semibold cursor-pointer ${
@@ -351,8 +363,9 @@ export default function AdminPage() {
                 : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D]'
             }`}
           >
-            Чек загружен (На проверке)
+            📄 Чек загружен ({bookings.filter((b) => b.status === 'receipt_uploaded').length})
           </button>
+
           <button
             onClick={() => setFilterStatus('confirmed')}
             className={`px-4 py-2 rounded-xl border-2 text-xs font-semibold cursor-pointer ${
@@ -361,7 +374,7 @@ export default function AdminPage() {
                 : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D]'
             }`}
           >
-            Подтверждённые
+            ✅ Подтверждённые ({bookings.filter((b) => b.status === 'confirmed').length})
           </button>
         </div>
 
@@ -376,13 +389,52 @@ export default function AdminPage() {
             <Inbox className="w-12 h-12 text-[#C85A32] mx-auto opacity-40" />
             <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">Заявок в этой категории нет</h3>
             <p className="text-xs text-[#595652] max-w-sm mx-auto font-mono">
-              Когда родители заполнят форму записи на сайте и прикрепят чек, заявка сразу появится здесь.
+              Когда родители заполнят форму записи на сайте, заказ сразу появится здесь со статусом «Ожидает оплаты».
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filteredBookings.map((b) => {
-              const statusInfo = STATUS_LABELS[b.status] || { label: b.status, color: 'gray' };
+              const renderStatusBadge = () => {
+                switch (b.status) {
+                  case 'pending_payment':
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-mono font-bold border border-amber-500/30 bg-amber-50 text-amber-800">
+                        ⏳ Ожидает оплаты (Заказ создан)
+                      </span>
+                    );
+                  case 'receipt_uploaded':
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-mono font-bold border border-[#C85A32]/30 bg-[#C85A32]/10 text-[#C85A32]">
+                        📄 Чек загружен (На проверке)
+                      </span>
+                    );
+                  case 'confirmed':
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-mono font-bold border border-emerald-500/30 bg-emerald-50 text-emerald-800">
+                        ✅ Подтверждена
+                      </span>
+                    );
+                  case 'rescheduled':
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-mono font-bold border border-sky-500/30 bg-sky-50 text-sky-800">
+                        📅 Перенесена
+                      </span>
+                    );
+                  case 'cancelled':
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-mono font-bold border border-red-500/30 bg-red-50 text-red-800">
+                        ❌ Отклонена
+                      </span>
+                    );
+                  default:
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-mono font-bold border border-gray-200 bg-gray-50 text-gray-700">
+                        {b.status}
+                      </span>
+                    );
+                }
+              };
 
               return (
                 <div
@@ -392,9 +444,7 @@ export default function AdminPage() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-3">
                       <span className="text-xs font-mono text-[#595652]">ID: {b.id.substring(0, 13)}</span>
-                      <span className="px-3 py-1 rounded-full text-xs font-semibold border border-[#1F1E1D]/20 bg-amber-50 text-amber-800">
-                        {statusInfo.label}
-                      </span>
+                      {renderStatusBadge()}
                     </div>
 
                     <div>
