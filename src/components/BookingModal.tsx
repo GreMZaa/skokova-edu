@@ -23,17 +23,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   initialServiceTitle = SERVICES[1].title,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [availableDates, setAvailableDates] = useState<DateSlotGroup[]>([]);
-  
-  // Выбранные параметры
+
+  // Выбор услуги и слота
   const [selectedService, setSelectedService] = useState<Service>(
-    SERVICES.find(s => s.title === initialServiceTitle) || SERVICES[1]
+    SERVICES.find((s) => s.title === initialServiceTitle) || SERVICES[1]
   );
+  const [availableDates, setAvailableDates] = useState<DateSlotGroup[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string } | null>(null);
 
-  // Форма родителя
+  // Анкета родителя и ребёнка
   const [parentName, setParentName] = useState('');
   const [phone, setPhone] = useState('');
   const [telegramHandle, setTelegramHandle] = useState('');
@@ -41,6 +41,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [childGrade, setChildGrade] = useState<GradeLevel>('preschool_6');
   const [comment, setComment] = useState('');
   const [consentChecked, setConsentChecked] = useState(true);
+
+  // Сохраненные дети из профиля родителя
+  const [savedChildren, setSavedChildren] = useState<{ id: string; name: string; grade: GradeLevel }[]>([]);
+  const [isCustomChild, setIsCustomChild] = useState(false);
 
   // Оплата и чек
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -67,6 +71,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         if (data.profile.phone) setPhone(data.profile.phone);
         if (data.profile.telegram_handle) setTelegramHandle(data.profile.telegram_handle);
         if (data.children && data.children.length > 0) {
+          setSavedChildren(data.children);
           setChildName(data.children[0].name);
           setChildGrade(data.children[0].grade);
         }
@@ -110,7 +115,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > 10 * 1024 * 1024) {
-        setErrorMsg('Размер файла чека не должен превышать 10 МБ');
+        setErrorMsg('Размер файла не должен превышать 10 МБ');
         return;
       }
       setErrorMsg('');
@@ -125,7 +130,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
     setErrorMsg('');
     
-    // Блокировка слота на 15 минут через API
     try {
       await fetch('/api/slots/lock', {
         method: 'POST',
@@ -195,26 +199,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
       setStep(4);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Произошла ошибка при отправке. Попробуйте еще раз.');
+      console.error('Booking submit error:', err);
+      setErrorMsg(err.message || 'Произошла ошибка при отправке заявки. Попробуйте еще раз.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const currentGroup = availableDates.find((d) => d.dateStr === selectedDate);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#1F1E1D]/60 backdrop-blur-sm overflow-y-auto">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white border-2 border-[#1F1E1D] rounded-2xl hard-shadow-lg w-full max-w-2xl overflow-hidden relative my-8"
+        className="relative w-full max-w-2xl bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-3xl hard-shadow-lg overflow-hidden my-auto max-h-[90vh] flex flex-col"
       >
         {/* Шапка модального окна */}
-        <div className="p-5 bg-[#FAF8F5] border-b-2 border-[#1F1E1D] flex items-center justify-between">
+        <div className="flex items-center justify-between p-5 border-b-2 border-[#1F1E1D]/10 bg-white">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#C85A32] text-white flex items-center justify-center font-bold text-sm">
+            <div className="w-8 h-8 rounded-xl bg-[#C85A32] text-white flex items-center justify-center font-bold text-sm hard-shadow">
               {step}
             </div>
             <div>
@@ -222,31 +225,31 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 {step === 1 && 'Шаг 1: Выбор программы и времени'}
                 {step === 2 && 'Шаг 2: Анкетные данные ребёнка'}
                 {step === 3 && 'Шаг 3: Оплата по СБП и загрузка чека'}
-                {step === 4 && 'Заявка успешно отправлена!'}
+                {step === 4 && 'Заявка принята!'}
               </h3>
               <p className="text-xs text-[#595652] font-mono">
                 {step === 1 && 'Выберите подходящий день и свободный слот'}
                 {step === 2 && 'Укажите информацию для подготовки к занятию'}
                 {step === 3 && 'Переведите оплату и прикрепите подтверждение'}
-                {step === 4 && 'Педагог уведомит вас в ближайшее время'}
+                {step === 4 && 'Запись успешна, ожидайте подтверждения'}
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg border border-[#1F1E1D]/20 flex items-center justify-center text-[#1F1E1D] hover:bg-gray-100 transition-colors"
+            className="p-2 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] bg-white text-[#1F1E1D] transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Тело модального окна */}
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+        <div className="p-6 overflow-y-auto space-y-6">
           
           {errorMsg && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="p-3.5 rounded-2xl border-2 border-red-500/30 bg-red-50 text-red-700 text-xs font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{errorMsg}</span>
             </div>
           )}
@@ -260,12 +263,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <label className="text-xs font-mono font-bold uppercase text-[#595652]">
                   Выберите программу:
                 </label>
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 gap-2.5">
                   {SERVICES.map((s) => (
                     <button
                       key={s.id}
                       onClick={() => setSelectedService(s)}
-                      className={`p-3.5 rounded-xl border-2 text-left flex items-center justify-between transition-all cursor-pointer ${
+                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
                         selectedService.id === s.id
                           ? 'border-[#C85A32] bg-[#C85A32]/5 hard-shadow'
                           : 'border-[#1F1E1D]/20 bg-[#FAF8F5] hover:border-[#1F1E1D]'
@@ -403,18 +406,61 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Выбор имени ребёнка из списка */}
                 <div className="space-y-1">
                   <label className="text-xs font-mono font-semibold text-[#595652]">
                     Имя ребёнка *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Например, Артём"
-                    value={childName}
-                    onChange={(e) => setChildName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
-                  />
+                  {savedChildren.length > 0 && !isCustomChild ? (
+                    <select
+                      value={childName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__custom__') {
+                          setIsCustomChild(true);
+                          setChildName('');
+                        } else {
+                          const found = savedChildren.find((c) => c.name === val);
+                          setChildName(val);
+                          if (found) setChildGrade(found.grade);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 text-sm font-bold rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white text-[#1F1E1D]"
+                    >
+                      {savedChildren.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name} ({GRADE_LABELS[c.grade] || c.grade})
+                        </option>
+                      ))}
+                      <option value="__custom__">✏️ Ввести имя другого ребёнка</option>
+                    </select>
+                  ) : (
+                    <div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Например, Артём"
+                        value={childName}
+                        onChange={(e) => setChildName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
+                      />
+                      {savedChildren.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomChild(false);
+                            if (savedChildren.length > 0) {
+                              setChildName(savedChildren[0].name);
+                              setChildGrade(savedChildren[0].grade);
+                            }
+                          }}
+                          className="text-[10px] font-mono text-[#C85A32] hover:underline mt-1 block cursor-pointer"
+                        >
+                          ↩ Выбрать из списка сохранённых детей
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -453,7 +499,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   Комментарий (какие есть сложности или на что обратить внимание)
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="Плохо читает по слогам, нужно подтянуть решения задач..."
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
@@ -461,30 +507,30 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 />
               </div>
 
-              <div className="flex items-center gap-2 pt-2 text-xs text-[#595652]">
+              <div className="flex items-center gap-2 pt-2">
                 <input
                   type="checkbox"
                   id="consent"
                   checked={consentChecked}
                   onChange={(e) => setConsentChecked(e.target.checked)}
-                  className="w-4 h-4 accent-[#C85A32]"
+                  className="w-4 h-4 accent-[#C85A32] rounded cursor-pointer"
                 />
-                <label htmlFor="consent">
+                <label htmlFor="consent" className="text-xs text-[#595652] cursor-pointer">
                   Согласен(на) на обработку персональных данных (ФЗ-152)
                 </label>
               </div>
 
-              <div className="flex items-center gap-3 pt-4">
+              <div className="flex gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="px-4 py-3 border-2 border-[#1F1E1D]/20 rounded-xl text-xs font-semibold hover:border-[#1F1E1D]"
+                  className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
                 >
                   Назад
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer"
+                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer"
                 >
                   Перейти к оплате реквизитов
                 </button>
@@ -493,108 +539,124 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             </form>
           )}
 
-          {/* ШАГ 3: Оплата по реквизитам СБП и загрузка чека */}
+          {/* ШАГ 3: Оплата СБП и Загрузка чека */}
           {step === 3 && (
             <div className="space-y-6">
               
-              <div className="p-4 bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-xl space-y-3">
-                <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-2">
-                  <span className="text-xs font-mono text-[#595652]">Сумма к оплате:</span>
-                  <span className="font-serif font-bold text-xl text-[#C85A32]">
+              <div className="p-4 bg-white border-2 border-[#1F1E1D] rounded-2xl hard-shadow space-y-3">
+                <div className="flex items-center justify-between text-xs font-mono text-[#595652]">
+                  <span>Сумма к оплате:</span>
+                  <span className="font-serif font-bold text-lg text-[#C85A32]">
                     {selectedService.price.toLocaleString('ru-RU')} ₽
                   </span>
                 </div>
 
-                <div className="space-y-2 text-xs text-[#1F1E1D]">
-                  <div className="font-bold font-mono">Реквизиты для перевода (СБП):</div>
-                  <div className="flex items-center justify-between p-2.5 bg-white border border-[#1F1E1D]/20 rounded-lg">
+                <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/10 space-y-1.5">
+                  <span className="text-[11px] font-mono font-bold uppercase text-[#595652] block">
+                    Реквизиты для перевода (СБП):
+                  </span>
+                  <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-bold">+7 (926) 123-45-67</div>
+                      <div className="font-mono font-bold text-sm text-[#1F1E1D]">+7 (926) 123-45-67</div>
                       <div className="text-[11px] text-[#595652]">Т-Банк / Сбербанк • Скокова Юлия Павловна</div>
                     </div>
                     <button
                       onClick={handleCopyCard}
-                      className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-gray-100 border border-[#1F1E1D]/30 rounded-md flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{isCopied ? 'Скопировано' : 'Копировать'}</span>
+                      {isCopied ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-600 font-bold">Скопировано</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
+                          <span>Копировать</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* Загрузчик файла чека */}
+              {/* Поле загрузки файла */}
               <div className="space-y-2">
                 <label className="text-xs font-mono font-bold uppercase text-[#595652]">
                   Прикрепите фото или PDF чека оплаты:
                 </label>
-                <div className="border-2 border-dashed border-[#1F1E1D]/30 rounded-xl p-6 text-center hover:border-[#C85A32] transition-colors bg-[#FAF8F5]">
+                <div className="relative border-2 border-dashed border-[#1F1E1D]/30 hover:border-[#C85A32] rounded-2xl p-6 text-center bg-white transition-colors">
                   <input
                     type="file"
-                    accept="image/png, image/jpeg, application/pdf"
+                    accept="image/*,.pdf"
                     onChange={handleFileChange}
-                    id="receipt-file-input"
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
-                  <label htmlFor="receipt-file-input" className="cursor-pointer space-y-2 block">
-                    <Upload className="w-8 h-8 text-[#C85A32] mx-auto" />
-                    <div className="text-sm font-semibold text-[#1F1E1D]">
-                      {receiptFile ? receiptFile.name : 'Нажмите для выбора файла (JPG, PNG, PDF)'}
-                    </div>
-                    <div className="text-xs text-[#595652]">Размер до 10 МБ</div>
-                  </label>
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Upload className="w-8 h-8 text-[#C85A32]" />
+                    {receiptFile ? (
+                      <div>
+                        <div className="font-bold text-xs text-[#1F1E1D]">{receiptFile.name}</div>
+                        <div className="text-[10px] text-[#595652]">Размер: {(receiptFile.size / 1024 / 1024).toFixed(2)} МБ</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="font-bold text-xs text-[#1F1E1D]">Нажмите или перетащите сюда чек</div>
+                        <div className="text-[10px] text-[#595652]">Поддерживаются JPG, PNG, PDF до 10 МБ</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-4">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="px-4 py-3 border-2 border-[#1F1E1D]/20 rounded-xl text-xs font-semibold hover:border-[#1F1E1D]"
+                  className="px-4 py-3.5 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
                 >
                   Назад
                 </button>
                 <button
-                  type="button"
                   onClick={handleSubmitBooking}
-                  disabled={isSubmitting}
-                  className="flex-1 bg-[#2E5A44] hover:bg-[#234634] text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  disabled={isSubmitting || !receiptFile}
+                  className="flex-1 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-40 text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>{isSubmitting ? 'Отправка...' : 'Я оплатил(а), отправить заявку'}</span>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Отправка заявки и чека...</span>
+                    </>
+                  ) : (
+                    <span>Я оплатил(а), отправить заявку</span>
+                  )}
                 </button>
               </div>
 
             </div>
           )}
 
-          {/* ШАГ 4: Экран благодарности */}
+          {/* ШАГ 4: Успешное бронирование */}
           {step === 4 && (
-            <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-[#1F1E1D] text-emerald-600 flex items-center justify-center mx-auto hard-shadow">
+            <div className="text-center py-8 space-y-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center hard-shadow border-2 border-[#1F1E1D]">
                 <CheckCircle2 className="w-10 h-10" />
               </div>
 
-              <h3 className="font-serif font-bold text-2xl text-[#1F1E1D]">
-                Заявка принята!
+              <h3 className="font-serif font-extrabold text-2xl text-[#1F1E1D]">
+                Заявка успешно отправлена!
               </h3>
 
-              <p className="text-sm text-[#595652] max-w-md mx-auto leading-relaxed">
-                Спасибо, {parentName}! Ваша запись на <strong>{selectedDate} в {selectedSlot?.time}</strong> успешно зафиксирована. Чек прикреплён и отправлен педагогу.
+              <p className="text-xs text-[#595652] max-w-md mx-auto leading-relaxed">
+                Спасибо! Скокова Юлия Павловна уже получила ваш чек и подтверждение оплаты. В ближайшее время она свяжется с вами или вышлет ссылку в Telegram.
               </p>
-
-              <div className="p-4 bg-[#FAF8F5] border border-[#1F1E1D]/20 rounded-xl text-xs text-left space-y-1">
-                <div><strong>Услуга:</strong> {selectedService.title}</div>
-                <div><strong>Ребёнок:</strong> {childName} ({GRADE_LABELS[childGrade]})</div>
-                <div><strong>Телефон:</strong> {phone}</div>
-              </div>
 
               <div className="pt-4">
                 <button
                   onClick={onClose}
-                  className="bg-[#1F1E1D] text-white text-sm font-semibold px-8 py-3 rounded-xl border-2 border-[#1F1E1D] hard-shadow"
+                  className="px-6 py-3 rounded-xl bg-[#1F1E1D] text-white font-mono text-xs font-bold hard-shadow hover:bg-[#C85A32] transition-colors cursor-pointer"
                 >
-                  Закрыть окно
+                  Вернуться на сайт
                 </button>
               </div>
             </div>
