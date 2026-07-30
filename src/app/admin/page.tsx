@@ -29,6 +29,8 @@ import {
   Building,
   Plus,
   Smartphone,
+  Edit2,
+  X,
 } from 'lucide-react';
 import { GRADE_LABELS, STATUS_LABELS, GradeLevel, BookingStatus } from '@/types/database';
 import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
@@ -100,6 +102,15 @@ export default function AdminPage() {
   const [newMethodBank, setNewMethodBank] = useState<string>('Т-Банк / Сбербанк');
   const [newMethodRecipient, setNewMethodRecipient] = useState<string>('Скокова Юлия Павловна');
 
+  // Форма редактирования существующего способа оплаты
+  const [editingMethodId, setEditingMethodId] = useState<string | null>(null);
+  const [editMethodType, setEditMethodType] = useState<'sbp' | 'card'>('sbp');
+  const [editMethodTitle, setEditMethodTitle] = useState<string>('');
+  const [editMethodPhone, setEditMethodPhone] = useState<string>('');
+  const [editMethodCard, setEditMethodCard] = useState<string>('');
+  const [editMethodBank, setEditMethodBank] = useState<string>('');
+  const [editMethodRecipient, setEditMethodRecipient] = useState<string>('');
+
   // Редактируемые поля модального окна бронирования
   const [editStatus, setEditStatus] = useState<BookingStatus>('pending_payment');
   const [editServiceTitle, setEditServiceTitle] = useState<string>('Онлайн-занятие (Индивидуально)');
@@ -153,6 +164,35 @@ export default function AdminPage() {
 
     setPaymentMethods((prev) => [...prev, newCard]);
     setShowAddMethodForm(false);
+  };
+
+  const handleStartEditMethod = (method: PaymentMethodItem) => {
+    setEditingMethodId(method.id);
+    setEditMethodType(method.type);
+    setEditMethodTitle(method.title);
+    setEditMethodPhone(method.phone || '');
+    setEditMethodCard(method.card_number || '');
+    setEditMethodBank(method.bank_name);
+    setEditMethodRecipient(method.recipient);
+  };
+
+  const handleSaveEditMethod = (id: string) => {
+    setPaymentMethods((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? {
+              ...m,
+              type: editMethodType,
+              title: editMethodTitle,
+              phone: editMethodType === 'sbp' ? editMethodPhone : undefined,
+              card_number: editMethodType === 'card' ? editMethodCard : undefined,
+              bank_name: editMethodBank,
+              recipient: editMethodRecipient,
+            }
+          : m
+      )
+    );
+    setEditingMethodId(null);
   };
 
   const handleDeletePaymentMethod = (id: string) => {
@@ -723,12 +763,15 @@ export default function AdminPage() {
                       Способы оплаты и реквизиты
                     </h3>
                     <p className="text-xs text-[#595652] font-mono">
-                      Добавляйте карты или СБП, которые будут доступны родителям
+                      Добавляйте и редактируйте карты или СБП для оплаты родителями
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowRequisitesModal(false)}
+                  onClick={() => {
+                    setShowRequisitesModal(false);
+                    setEditingMethodId(null);
+                  }}
                   className="p-1 rounded-xl text-gray-400 hover:text-gray-600 cursor-pointer"
                 >
                   <XCircle className="w-5 h-5" />
@@ -756,41 +799,161 @@ export default function AdminPage() {
                   paymentMethods.map((method) => (
                     <div
                       key={method.id}
-                      className="p-4 bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-2xl hard-shadow flex items-center justify-between gap-4"
+                      className="p-4 bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-2xl hard-shadow space-y-3"
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          {method.type === 'sbp' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-mono font-bold border border-purple-300">
-                              <Smartphone className="w-3 h-3 text-purple-600" />
-                              <span>СБП (Телефон)</span>
-                            </span>
+                      {editingMethodId === method.id ? (
+                        /* Форма редактирования выбранной карточки */
+                        <div className="space-y-3 text-xs font-mono bg-white p-3.5 rounded-xl border-2 border-[#C85A32]">
+                          <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-2">
+                            <span className="font-bold text-[#C85A32]">✏️ Редактирование карточки</span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingMethodId(null)}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="font-bold uppercase text-[#595652]">Тип оплаты:</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditMethodType('sbp')}
+                                className={`py-1.5 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                                  editMethodType === 'sbp'
+                                    ? 'bg-[#C85A32] text-white border-[#1F1E1D]'
+                                    : 'bg-[#FAF8F5] text-[#1F1E1D] border-[#1F1E1D]/20'
+                                }`}
+                              >
+                                <Smartphone className="w-3.5 h-3.5" />
+                                <span>СБП</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditMethodType('card')}
+                                className={`py-1.5 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                                  editMethodType === 'card'
+                                    ? 'bg-[#C85A32] text-white border-[#1F1E1D]'
+                                    : 'bg-[#FAF8F5] text-[#1F1E1D] border-[#1F1E1D]/20'
+                                }`}
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Карта</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {editMethodType === 'sbp' ? (
+                            <div className="space-y-1">
+                              <label className="font-bold text-[#595652]">Номер телефона СБП:</label>
+                              <input
+                                type="text"
+                                value={editMethodPhone}
+                                onChange={(e) => setEditMethodPhone(formatRussianPhone(e.target.value))}
+                                className="w-full px-3 py-2 rounded-xl border border-[#1F1E1D]/20 font-bold outline-none"
+                              />
+                            </div>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-mono font-bold border border-blue-300">
-                              <CreditCard className="w-3 h-3 text-blue-600" />
-                              <span>Банковская карта</span>
-                            </span>
+                            <div className="space-y-1">
+                              <label className="font-bold text-[#595652]">Номер карты:</label>
+                              <input
+                                type="text"
+                                value={editMethodCard}
+                                onChange={(e) => setEditMethodCard(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl border border-[#1F1E1D]/20 font-bold outline-none"
+                              />
+                            </div>
                           )}
-                          <span className="font-bold text-xs text-[#1F1E1D]">{method.title}</span>
-                        </div>
 
-                        <div className="font-mono font-extrabold text-base text-[#1F1E1D]">
-                          {method.type === 'sbp' ? method.phone : method.card_number}
-                        </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="font-bold text-[#595652]">Банк:</label>
+                              <input
+                                type="text"
+                                value={editMethodBank}
+                                onChange={(e) => setEditMethodBank(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl border border-[#1F1E1D]/20 font-bold outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="font-bold text-[#595652]">Получатель:</label>
+                              <input
+                                type="text"
+                                value={editMethodRecipient}
+                                onChange={(e) => setEditMethodRecipient(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl border border-[#1F1E1D]/20 font-bold outline-none"
+                              />
+                            </div>
+                          </div>
 
-                        <div className="text-[11px] font-mono text-[#595652]">
-                          {method.bank_name} • Получатель: <strong className="text-[#1F1E1D]">{method.recipient}</strong>
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditMethod(method.id)}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
+                            >
+                              Сохранить карточку
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingMethodId(null)}
+                              className="px-3 py-2 rounded-xl bg-gray-200 text-[#1F1E1D] font-bold cursor-pointer"
+                            >
+                              Отмена
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        /* Просмотр карточки с кнопками Изменить и Удалить */
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              {method.type === 'sbp' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-mono font-bold border border-purple-300">
+                                  <Smartphone className="w-3 h-3 text-purple-600" />
+                                  <span>СБП (Телефон)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-mono font-bold border border-blue-300">
+                                  <CreditCard className="w-3 h-3 text-blue-600" />
+                                  <span>Банковская карта</span>
+                                </span>
+                              )}
+                              <span className="font-bold text-xs text-[#1F1E1D]">{method.title}</span>
+                            </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePaymentMethod(method.id)}
-                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
-                        title="Удалить этот способ оплаты"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                            <div className="font-mono font-extrabold text-base text-[#1F1E1D]">
+                              {method.type === 'sbp' ? method.phone : method.card_number}
+                            </div>
+
+                            <div className="text-[11px] font-mono text-[#595652]">
+                              {method.bank_name} • Получатель: <strong className="text-[#1F1E1D]">{method.recipient}</strong>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditMethod(method)}
+                              className="p-2 text-[#C85A32] hover:text-[#b04b27] hover:bg-[#C85A32]/10 rounded-xl transition-colors cursor-pointer"
+                              title="Редактировать эту карточку"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePaymentMethod(method.id)}
+                              className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                              title="Удалить этот способ оплаты"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -800,7 +963,7 @@ export default function AdminPage() {
               {showAddMethodForm ? (
                 <form onSubmit={handleAddPaymentMethod} className="p-4 bg-white border-2 border-[#C85A32] rounded-2xl hard-shadow space-y-4 text-xs font-mono">
                   <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-2">
-                    <span className="font-bold text-sm text-[#1F1E1D]">➕ Добавление способа оплаты</span>
+                    <span className="font-bold text-sm text-[#1F1E1D]">➕ Добавление нового способа оплаты</span>
                     <button
                       type="button"
                       onClick={() => setShowAddMethodForm(false)}
