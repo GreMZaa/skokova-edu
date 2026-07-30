@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 
+const TOLYATTI_TZ = 'Europe/Samara'; // Самарское время (UTC+4, Тольятти)
+
 function getGeneratedDefaultSlots() {
   const dates = [];
   const today = new Date();
   
+  const defaultTimes = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+
   for (let i = 1; i <= 7; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     
     const dateStr = d.toLocaleDateString('ru-RU', {
+      timeZone: TOLYATTI_TZ,
       weekday: 'short',
       day: 'numeric',
       month: 'long',
@@ -18,13 +23,11 @@ function getGeneratedDefaultSlots() {
     dates.push({
       dateStr: dateStr.charAt(0).toUpperCase() + dateStr.slice(1),
       rawDate: d.toISOString().split('T')[0],
-      slots: [
-        { id: `slot-${i}-1`, time: '14:00', start_time: `${d.toISOString().split('T')[0]}T14:00:00Z` },
-        { id: `slot-${i}-2`, time: '15:00', start_time: `${d.toISOString().split('T')[0]}T15:00:00Z` },
-        { id: `slot-${i}-3`, time: '16:00', start_time: `${d.toISOString().split('T')[0]}T16:00:00Z` },
-        { id: `slot-${i}-4`, time: '17:00', start_time: `${d.toISOString().split('T')[0]}T17:00:00Z` },
-        { id: `slot-${i}-5`, time: '18:00', start_time: `${d.toISOString().split('T')[0]}T18:00:00Z` },
-      ],
+      slots: defaultTimes.map((t, idx) => ({
+        id: `slot-${i}-${idx}`,
+        time: t,
+        start_time: `${d.toISOString().split('T')[0]}T${t}:00+04:00`,
+      })),
     });
   }
 
@@ -75,21 +78,20 @@ export async function GET(req: Request) {
       });
     }
 
-    // 2. Если слотов в базе нет — автозаполняем слоты на неделю вперёд в Supabase DB
+    // 2. Если слотов в базе нет — автозаполняем слоты в Самарском часовом поясе (Тольятти UTC+4)
     if (!dbSlots || dbSlots.length === 0) {
       const newSlotsToInsert: { start_time: string; end_time: string; is_booked: boolean }[] = [];
+      const timesTolyatti = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
       const today = new Date();
 
-      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+      for (let dayOffset = 1; dayOffset <= 10; dayOffset++) {
         const dateObj = new Date(today);
         dateObj.setDate(today.getDate() + dayOffset);
         const yyyymmdd = dateObj.toISOString().split('T')[0];
 
-        const times = ['14:00', '15:00', '16:00', '17:00', '18:00'];
-        times.forEach((t) => {
-          const startTime = `${yyyymmdd}T${t}:00Z`;
-          const endHour = parseInt(t.split(':')[0], 10);
-          const endTime = `${yyyymmdd}T${endHour}:45:00Z`;
+        timesTolyatti.forEach((t) => {
+          const startTime = new Date(`${yyyymmdd}T${t}:00+04:00`).toISOString();
+          const endTime = new Date(new Date(startTime).getTime() + 45 * 60 * 1000).toISOString();
           newSlotsToInsert.push({
             start_time: startTime,
             end_time: endTime,
@@ -111,21 +113,25 @@ export async function GET(req: Request) {
       dbSlots = retryRes.data || [];
     }
 
-    // 3. Группируем слоты по красивым датам
+    // 3. Группируем слоты по датам в часовом поясе Тольятти (Europe/Samara, UTC+4)
     const dateGroupsMap: { [key: string]: { dateStr: string; slots: { id: string; time: string; start_time: string }[] } } = {};
 
     dbSlots.forEach((slot: any) => {
       const startDate = new Date(slot.start_time);
       const dateStrRaw = startDate.toLocaleDateString('ru-RU', {
+        timeZone: TOLYATTI_TZ,
         weekday: 'short',
         day: 'numeric',
         month: 'long',
       });
       const dateStrFormatted = dateStrRaw.charAt(0).toUpperCase() + dateStrRaw.slice(1);
 
-      const hours = startDate.getUTCHours().toString().padStart(2, '0');
-      const minutes = startDate.getUTCMinutes().toString().padStart(2, '0');
-      const timeStr = `${hours}:${minutes}`;
+      // Время в часовом поясе Тольятти (HH:MM)
+      const timeStr = startDate.toLocaleTimeString('ru-RU', {
+        timeZone: TOLYATTI_TZ,
+        hour: '2-digit',
+        minute: '2-digit',
+      });
 
       if (!dateGroupsMap[dateStrFormatted]) {
         dateGroupsMap[dateStrFormatted] = {
@@ -134,11 +140,14 @@ export async function GET(req: Request) {
         };
       }
 
-      dateGroupsMap[dateStrFormatted].slots.push({
-        id: slot.id,
-        time: timeStr,
-        start_time: slot.start_time,
-      });
+      // Избегаем дубликатов времени на одну и ту же дату
+      if (!dateGroupsMap[dateStrFormatted].slots.some((s) => s.time === timeStr)) {
+        dateGroupsMap[dateStrFormatted].slots.push({
+          id: slot.id,
+          time: timeStr,
+          start_time: slot.start_time,
+        });
+      }
     });
 
     const datesArray = Object.values(dateGroupsMap);
