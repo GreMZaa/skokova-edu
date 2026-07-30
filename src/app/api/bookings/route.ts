@@ -74,21 +74,31 @@ export async function POST(req: Request) {
           .eq('id', slot_id);
       }
 
-      // 3. Добавляем ребёнка в семью, если родитель авторизован и такого ребёнка ещё нет
-      if (user_id && child_name) {
-        const { data: existingChild } = await supabase
-          .from('children')
-          .select('id')
-          .eq('parent_id', user_id)
-          .eq('name', child_name)
-          .maybeSingle();
+      // 3. Автоматически сохраняем/обновляем профиль родителя в таблице profiles в Supabase DB
+      if (user_id) {
+        await supabase.from('profiles').upsert({
+          id: user_id,
+          full_name: parent_name,
+          phone: phone,
+          telegram_handle: telegram_handle,
+        });
 
-        if (!existingChild) {
-          await supabase.from('children').insert({
-            parent_id: user_id,
-            name: child_name,
-            grade: child_grade || 'preschool_6',
-          });
+        // 4. Добавляем ребёнка в семью, если такого ещё нет
+        if (child_name && child_name !== 'Нет никого') {
+          const { data: existingChild } = await supabase
+            .from('children')
+            .select('id')
+            .eq('parent_id', user_id)
+            .eq('name', child_name)
+            .maybeSingle();
+
+          if (!existingChild) {
+            await supabase.from('children').insert({
+              parent_id: user_id,
+              name: child_name,
+              grade: child_grade || 'preschool_6',
+            });
+          }
         }
       }
     }

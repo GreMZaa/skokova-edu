@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
   try {
-    const { email, password, fullName } = await req.json();
+    const { email, password, fullName, phone, telegramHandle } = await req.json();
 
     if (!email || !password) {
       return NextResponse.json({ success: false, error: 'Email и пароль обязательны' }, { status: 400 });
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
 
     let createdUser: any = null;
 
-    // Создаем пользователя через Admin API с автоподтверждением email_confirm: true
+    // 1. Создаем пользователя через Admin API с автоподтверждением email_confirm: true
     const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     });
 
     if (createErr) {
-      // Если пользователь уже был зарегистрирован — обновляем пароль и автоподтверждаем
+      // Если пользователь уже зарегистрирован — обновляем пароль и автоподтверждаем
       const { data: listData } = await supabase.auth.admin.listUsers();
       const existingUser = listData?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
 
@@ -40,10 +40,20 @@ export async function POST(req: Request) {
       createdUser = newUser.user;
     }
 
+    // 2. Гарантированно создаем/обновляем запись в таблице profiles в Supabase DB!
+    if (createdUser?.id) {
+      await supabase.from('profiles').upsert({
+        id: createdUser.id,
+        full_name: fullName || 'Родитель',
+        phone: phone || '',
+        telegram_handle: telegramHandle || '',
+      });
+    }
+
     return NextResponse.json({
       success: true,
       user: createdUser ? { id: createdUser.id, email: createdUser.email } : null,
-      message: 'Аккаунт создается и готов к входу',
+      message: 'Аккаунт создан и профиль записан в Supabase DB',
     });
   } catch (error: any) {
     console.error('Signup admin error:', error);
