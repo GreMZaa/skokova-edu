@@ -14,7 +14,7 @@ export async function GET() {
     const supabase = createAdminClient();
     const { data: dbBookings, error } = await supabase
       .from('bookings')
-      .select('*, time_slots(start_time)')
+      .select('*, time_slots!bookings_slot_id_fkey(start_time)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;

@@ -13,10 +13,10 @@ export async function GET() {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Запрашиваем все заявки текущего родителя по его user_id с присоединением время слота
+    // Запрашиваем все заявки текущего родителя по его user_id с точной указанной связью внешней ключа bookings_slot_id_fkey
     const { data: bookings, error } = await supabase
       .from('bookings')
-      .select('*, time_slots(start_time)')
+      .select('*, time_slots!bookings_slot_id_fkey(start_time)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
