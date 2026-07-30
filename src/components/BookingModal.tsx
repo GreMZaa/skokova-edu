@@ -48,12 +48,39 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Загрузка слотов при открытии модального окна
+  const [userId, setUserId] = useState('');
+
+  // Загрузка слотов и данных родителя при открытии модального окна
   useEffect(() => {
     if (isOpen) {
       fetchSlots();
+      fetchUserData();
     }
   }, [isOpen]);
+
+  const fetchUserData = async () => {
+    try {
+      const res = await fetch('/api/parent/profile');
+      const data = await res.json();
+      if (data.success) {
+        if (data.profile.full_name) setParentName(data.profile.full_name);
+        if (data.profile.phone) setPhone(data.profile.phone);
+        if (data.profile.telegram_handle) setTelegramHandle(data.profile.telegram_handle);
+        if (data.children && data.children.length > 0) {
+          setChildName(data.children[0].name);
+          setChildGrade(data.children[0].grade);
+        }
+      }
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+      }
+    } catch (e) {
+      // Игнорируем в неавторизованном режиме
+    }
+  };
 
   const fetchSlots = async () => {
     setLoadingSlots(true);
@@ -149,6 +176,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       formData.append('child_name', childName);
       formData.append('child_grade', childGrade);
       formData.append('comment', comment);
+      if (userId) {
+        formData.append('user_id', userId);
+      }
 
       formData.append('receipt_file', receiptFile);
 

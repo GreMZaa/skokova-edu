@@ -75,6 +75,8 @@ export async function POST(req: Request) {
       receipt_file_url = `https://storage.demo/receipts/${receipt_file.name}`;
     }
 
+    const user_id = sanitizeStr(formData.get('user_id'));
+
     // 2. Сохранение заявки в БД Supabase
     let booking_id = `booking-${Date.now()}`;
     if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
@@ -83,6 +85,7 @@ export async function POST(req: Request) {
         .from('bookings')
         .insert({
           slot_id: slot_id || null,
+          user_id: user_id || null,
           service_title,
           price,
           parent_name,
