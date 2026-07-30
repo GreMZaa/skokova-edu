@@ -481,50 +481,63 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Шапка админки */}
-        <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 hard-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                <span>Авторизовано • Данные из Supabase DB</span>
-              </span>
+        {/* ЭЛЕГАНТНАЯ УПОРЯДОЧЕННАЯ ШАПКА АДМИНКИ */}
+        <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 sm:p-7 hard-shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          {/* Заголовок и статус */}
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-[#C85A32] flex items-center justify-center text-white font-mono font-extrabold text-lg hard-shadow shrink-0 border-2 border-[#1F1E1D]">
+              СЮ
             </div>
-            <h1 className="font-serif font-bold text-2xl sm:text-3xl text-[#1F1E1D]">
-              Управление заявками и расписанием
-            </h1>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                <h1 className="font-serif font-extrabold text-2xl sm:text-3xl text-[#1F1E1D] leading-tight">
+                  Панель преподавателя
+                </h1>
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                  <span>Supabase DB</span>
+                </span>
+              </div>
+              <p className="text-xs font-mono text-[#595652]">
+                Управление заявками, расписанием и способами оплаты • Скокова Ю.П.
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          {/* Группа кнопок управления */}
+          <div className="flex items-center gap-2.5 flex-wrap lg:justify-end">
+            {/* Главная кнопка реквизитов */}
             <button
               onClick={() => setShowRequisitesModal(true)}
-              className="px-3.5 py-2 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-2 transition-colors cursor-pointer"
+              className="px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#C85A32] hover:bg-[#b04b27] text-white text-xs font-mono font-bold hard-shadow flex items-center gap-2 transition-all cursor-pointer"
             >
-              <CreditCard className="w-4 h-4 text-[#C85A32]" />
+              <CreditCard className="w-4 h-4 text-white" />
               <span>💳 Способы оплаты (СБП / Карта)</span>
             </button>
 
+            {/* Кнопка обновления */}
             <button
               onClick={fetchRealBookings}
-              title="Обновить список"
-              className="p-2.5 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-[#595652] hover:text-[#1F1E1D] transition-colors cursor-pointer"
+              title="Обновить список заявок"
+              className="p-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-[#595652] hover:text-[#1F1E1D] transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${loadingBookings ? 'animate-spin text-[#C85A32]' : ''}`} />
             </button>
 
+            {/* Вспомогательные кнопки */}
             <button
               onClick={() => setShowLogsModal(true)}
-              className="px-3.5 py-2 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-2 transition-colors cursor-pointer"
+              className="px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <History className="w-4 h-4 text-[#C85A32]" />
-              <span>Журнал входов Supabase</span>
+              <span>Журнал входов</span>
             </button>
 
             <a
               href="/"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3.5 py-2 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-2 transition-colors"
+              className="px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-1.5 transition-colors"
             >
               <ExternalLink className="w-4 h-4 text-emerald-600" />
               <span>На сайт</span>
@@ -532,7 +545,7 @@ export default function AdminPage() {
 
             <button
               onClick={handleLogout}
-              className="px-3.5 py-2 rounded-xl border-2 border-red-200 bg-white hover:bg-red-50 text-xs font-mono font-bold text-red-600 flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3.5 py-2.5 rounded-xl border-2 border-red-200 bg-white hover:bg-red-50 text-xs font-mono font-bold text-red-600 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               <span>Выйти</span>
