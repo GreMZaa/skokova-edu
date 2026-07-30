@@ -73,6 +73,24 @@ export async function POST(req: Request) {
           .update({ locked_until: lockUntil })
           .eq('id', slot_id);
       }
+
+      // 3. Добавляем ребёнка в семью, если родитель авторизован и такого ребёнка ещё нет
+      if (user_id && child_name) {
+        const { data: existingChild } = await supabase
+          .from('children')
+          .select('id')
+          .eq('parent_id', user_id)
+          .eq('name', child_name)
+          .maybeSingle();
+
+        if (!existingChild) {
+          await supabase.from('children').insert({
+            parent_id: user_id,
+            name: child_name,
+            grade: child_grade || 'preschool_6',
+          });
+        }
+      }
     }
 
     return NextResponse.json({

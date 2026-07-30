@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { X, Calendar as CalendarIcon, Clock, Upload, CheckCircle2, AlertCircle, Copy, Check, Loader2 } from 'lucide-react';
+import { X, Calendar as CalendarIcon, Clock, Upload, CheckCircle2, AlertCircle, Copy, Check, Loader2, Sparkles, UserCheck } from 'lucide-react';
 import { SERVICES } from '@/data/services';
 import { GRADE_LABELS, GradeLevel, Service } from '@/types/database';
 import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
@@ -38,6 +39,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   // Анкета родителя и ребёнка
   const [parentName, setParentName] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [telegramHandle, setTelegramHandle] = useState('');
   const [childName, setChildName] = useState('');
@@ -48,6 +50,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Сохраненные дети из профиля родителя
   const [savedChildren, setSavedChildren] = useState<{ id: string; name: string; grade: GradeLevel }[]>([]);
   const [isCustomChild, setIsCustomChild] = useState(false);
+
+  // Информация об автоматически созданном аккаунте
+  const [createdAccountInfo, setCreatedAccountInfo] = useState<{ email: string } | null>(null);
 
   // Оплата и чек
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
@@ -85,6 +90,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserId(user.id);
+        if (user.email) setParentEmail(user.email);
       }
     } catch (e) {
       // Игнорируем в неавторизованном режиме
@@ -108,12 +114,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           if (parsed.selectedDate) setSelectedDate(parsed.selectedDate);
           if (parsed.selectedSlot) setSelectedSlot(parsed.selectedSlot);
           if (parsed.parentName) setParentName(capitalizeFirstLetter(parsed.parentName));
+          if (parsed.parentEmail) setParentEmail(parsed.parentEmail);
           if (parsed.phone) setPhone(formatRussianPhone(parsed.phone));
           if (parsed.telegramHandle) setTelegramHandle(formatTelegramHandle(parsed.telegramHandle));
           if (parsed.childName) setChildName(capitalizeFirstLetter(parsed.childName));
           if (parsed.childGrade) setChildGrade(parsed.childGrade);
           if (parsed.comment) setComment(capitalizeFirstLetter(parsed.comment));
           if (parsed.currentBookingId) setCurrentBookingId(parsed.currentBookingId);
+          if (parsed.createdAccountInfo) setCreatedAccountInfo(parsed.createdAccountInfo);
           if (parsed.step && parsed.step > 1 && parsed.step <= 3) {
             setStep(parsed.step);
           }
@@ -138,7 +146,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  const saveDraftToSession = (nextStep: 1 | 2 | 3, bookingId?: string) => {
+  const saveDraftToSession = (nextStep: 1 | 2 | 3, bookingId?: string, createdAcc?: { email: string }) => {
     try {
       const draftData = {
         step: nextStep,
@@ -146,12 +154,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         selectedDate,
         selectedSlot,
         parentName,
+        parentEmail,
         phone,
         telegramHandle,
         childName,
         childGrade,
         comment,
         currentBookingId: bookingId || currentBookingId,
+        createdAccountInfo: createdAcc || createdAccountInfo,
         timestamp: Date.now(),
       };
       sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
@@ -195,11 +205,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setStep(2);
   };
 
-  // Переход к оплате: Создает заказ в админке со статусом 'pending_payment' и резервирует слот
+  // Переход к оплате: Авто-создает аккаунт (если не авторизован), создает бронь и резервирует слот
   const handleGoToStep3 = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!parentName.trim() || !phone.trim() || !childName.trim()) {
       setErrorMsg('Заполните обязательные поля: Имя родителя, Телефон и Имя ребёнка');
+      return;
+    }
+    if (!userId && (!parentEmail || !parentEmail.includes('@'))) {
+      setErrorMsg('Пожалуйста, укажите верный Email для автоматического создания Личного кабинета');
       return;
     }
     if (!consentChecked) {
@@ -210,7 +224,43 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setIsSubmitting(true);
     setErrorMsg('');
 
+    let currentUserId = userId;
+    let newAccInfo = createdAccountInfo;
+
     try {
+      // 1. Если пользователь не авторизован, автоматически создаем аккаунт родителя
+      if (!currentUserId && parentEmail) {
+        const password = phone.replace(/\D/g, '') || '2026skokova';
+        const signupRes = await fetch('/api/parent/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: parentEmail.trim(),
+            password,
+            fullName: parentName,
+            phone,
+            telegramHandle,
+          }),
+        });
+
+        const signupData = await signupRes.json();
+        if (signupData.success && signupData.user?.id) {
+          currentUserId = signupData.user.id;
+          setUserId(currentUserId);
+          newAccInfo = { email: parentEmail.trim() };
+          setCreatedAccountInfo(newAccInfo);
+
+          // Автоматический вход в сессию
+          const { createClient } = await import('@/lib/supabase/client');
+          const supabase = createClient();
+          await supabase.auth.signInWithPassword({
+            email: parentEmail.trim(),
+            password,
+          });
+        }
+      }
+
+      // 2. Создание пред-заказа
       const formData = new FormData();
       formData.append('slot_id', selectedSlot?.id || '');
       formData.append('service_title', selectedService.title);
@@ -225,8 +275,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       formData.append('child_grade', childGrade);
       formData.append('comment', comment);
       formData.append('status', 'pending_payment');
-      if (userId) {
-        formData.append('user_id', userId);
+      if (currentUserId) {
+        formData.append('user_id', currentUserId);
       }
 
       const res = await fetch('/api/bookings', {
@@ -240,7 +290,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       }
 
       setCurrentBookingId(data.booking_id);
-      saveDraftToSession(3, data.booking_id);
+      saveDraftToSession(3, data.booking_id, newAccInfo || undefined);
       setStep(3);
     } catch (err: any) {
       console.error('Pending booking creation error:', err);
@@ -361,7 +411,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     <button
                       key={s.id}
                       onClick={() => setSelectedService(s)}
-                      className={`p-[#3.5] p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
+                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
                         selectedService.id === s.id
                           ? 'border-[#C85A32] bg-[#C85A32]/5 hard-shadow'
                           : 'border-[#1F1E1D]/20 bg-[#FAF8F5] hover:border-[#1F1E1D]'
@@ -468,6 +518,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <span className="font-serif font-bold text-[#C85A32]">{selectedService.price} ₽</span>
               </div>
 
+              {userId ? (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-500/30 text-emerald-800 text-xs font-mono font-medium flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Вы авторизованы как {parentEmail || 'родитель'}. Личный кабинет подключён!</span>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-[#C85A32]/10 border border-[#C85A32]/30 text-[#C85A32] text-xs font-mono font-medium flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                  <span>При отправке формы ваш Личный кабинет семьи будет создан автоматически!</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-mono font-semibold text-[#595652]">
@@ -501,6 +563,22 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   />
                 </div>
               </div>
+
+              {!userId && (
+                <div className="space-y-1">
+                  <label className="text-xs font-mono font-semibold text-[#595652]">
+                    Электронная почта (Email для Личного кабинета) *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="olga@mail.ru"
+                    value={parentEmail}
+                    onChange={(e) => setParentEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Выбор имени ребёнка из списка */}
@@ -640,7 +718,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Создание брони...</span>
+                      <span>Создание брони и кабинета...</span>
                     </>
                   ) : (
                     <span>Перейти к оплате реквизитов ➔</span>
@@ -761,17 +839,46 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 Заявка успешно отправлена!
               </h3>
 
+              {createdAccountInfo && (
+                <div className="p-4 bg-[#C85A32]/10 border-2 border-[#C85A32] rounded-2xl text-left space-y-2 max-w-md mx-auto my-4 hard-shadow">
+                  <div className="font-bold text-xs text-[#1F1E1D] flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#C85A32]" />
+                    <span>🎉 Ваш Личный кабинет семьи создается и подключен!</span>
+                  </div>
+                  <div className="text-xs text-[#595652] space-y-1 font-mono">
+                    <div>Логин: <strong className="text-[#1F1E1D]">{createdAccountInfo.email}</strong></div>
+                    <div>Пароль: <strong className="text-[#1F1E1D]">Ваш номер телефона</strong></div>
+                  </div>
+                  <div className="pt-1">
+                    <Link
+                      href="/my-dashboard"
+                      onClick={onClose}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono font-bold text-xs rounded-xl hard-shadow transition-colors"
+                    >
+                      <span>Перейти в Личный кабинет ➔</span>
+                    </Link>
+                  </div>
+                </div>
+              )}
+
               <p className="text-xs text-[#595652] max-w-md mx-auto leading-relaxed">
                 Спасибо! Скокова Юлия Павловна уже получила ваш чек и подтверждение оплаты. В ближайшее время она свяжется с вами или вышлет ссылку в Telegram.
               </p>
 
-              <div className="pt-4">
+              <div className="pt-4 flex justify-center gap-3">
                 <button
                   onClick={onClose}
-                  className="px-6 py-3 rounded-xl bg-[#1F1E1D] text-white font-mono text-xs font-bold hard-shadow hover:bg-[#C85A32] transition-colors cursor-pointer"
+                  className="px-6 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-white hover:border-[#1F1E1D] text-[#1F1E1D] font-mono text-xs font-bold transition-colors cursor-pointer"
                 >
                   Вернуться на сайт
                 </button>
+                <Link
+                  href="/my-dashboard"
+                  onClick={onClose}
+                  className="px-6 py-3 rounded-xl bg-[#1F1E1D] text-white font-mono text-xs font-bold hard-shadow hover:bg-[#C85A32] transition-colors cursor-pointer flex items-center gap-2"
+                >
+                  <span>Мой кабинет ➔</span>
+                </Link>
               </div>
             </div>
           )}
