@@ -278,37 +278,39 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="relative w-full sm:max-w-2xl bg-[#FAF8F5] border-2 border-[#1F1E1D] sm:rounded-3xl rounded-t-3xl hard-shadow-lg overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]"
       >
-        {/* Мобильная «ручка» для визуального affordance slide-down */}
-        <div className="sm:hidden flex justify-center py-2">
-          <div className="w-10 h-1 rounded-full bg-[#1F1E1D]/20" />
-        </div>
-
         {/* Шапка модального окна */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b-2 border-[#1F1E1D]/10 bg-white shrink-0">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[#C85A32] text-white flex items-center justify-center font-bold text-xs sm:text-sm hard-shadow shrink-0">
-              {step === 4 ? '✓' : step}
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-serif font-bold text-base sm:text-lg text-[#1F1E1D] truncate">
-                {step === 1 && 'Программа и время'}
-                {step === 2 && 'Данные ребёнка'}
-                {step === 4 && 'Заявка забронирована!'}
-              </h3>
-              <p className="text-[10px] sm:text-xs text-[#595652] font-mono truncate">
-                {step === 1 && 'Выберите подходящий день и слот'}
-                {step === 2 && 'Информация для подготовки к занятию'}
-                {step === 4 && 'Перейдите в кабинет для оплаты'}
-              </p>
-            </div>
+        <div className="border-b-2 border-[#1F1E1D]/10 bg-white shrink-0 sm:rounded-t-3xl rounded-t-3xl overflow-hidden">
+          {/* Мобильная «ручка» для визуального affordance slide-down */}
+          <div className="sm:hidden flex justify-center pt-2.5 pb-1 bg-white">
+            <div className="w-10 h-1.5 rounded-full bg-[#1F1E1D]/20" />
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] bg-white text-[#1F1E1D] transition-colors cursor-pointer active:scale-95 shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center justify-between px-4 pb-4 pt-1 sm:p-5">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[#C85A32] text-white flex items-center justify-center font-bold text-xs sm:text-sm hard-shadow shrink-0">
+                {step === 4 ? '✓' : step}
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-serif font-bold text-base sm:text-lg text-[#1F1E1D] truncate">
+                  {step === 1 && 'Программа и время'}
+                  {step === 2 && 'Данные ребёнка'}
+                  {step === 4 && 'Заявка забронирована!'}
+                </h3>
+                <p className="text-[10px] sm:text-xs text-[#595652] font-mono truncate">
+                  {step === 1 && 'Выберите подходящий день и слот'}
+                  {step === 2 && 'Информация для подготовки к занятию'}
+                  {step === 4 && 'Перейдите в кабинет для оплаты'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] bg-white text-[#1F1E1D] transition-colors cursor-pointer active:scale-95 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Тело модального окна */}
