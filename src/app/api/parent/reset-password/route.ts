@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
   try {
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Генерируем безопасную ссылку сброса с явным перенаправлением на продакшн сайт вместо localhost
+    // 2. Генерируем безопасную ссылку сброса с явным перенаправлением на продакшн сайт
     const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
       type: 'recovery',
       email: cleanEmail,
@@ -64,7 +64,6 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       email: cleanEmail,
-      actionLink: rawActionLink,
       message: `✉️ Запрос на сброс пароля обработан для ${cleanEmail}!`,
     });
   } catch (error: any) {
@@ -76,10 +75,20 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH: Надежный фолбэк для обновления пароля (если мобильный встроенный браузер теряет куки/сессию)
+// PATCH: Строго авторизованное обновление пароля только при наличии валидной криптографической сессии
 export async function PATCH(req: Request) {
   try {
-    const { email, newPassword } = await req.json();
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Доступ запрещён. Недействительный или истёкший токен восстановления.' },
+        { status: 401 }
+      );
+    }
+
+    const { newPassword } = await req.json();
 
     if (!newPassword || newPassword.length < 6) {
       return NextResponse.json(
@@ -88,31 +97,17 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const supabase = createAdminClient();
+    const adminSupabase = createAdminClient();
+    const { error: updateErr } = await adminSupabase.auth.admin.updateUserById(user.id, {
+      password: newPassword,
+    });
 
-    if (email && email.includes('@')) {
-      const cleanEmail = email.trim().toLowerCase();
-      const { data: usersData } = await supabase.auth.admin.listUsers();
-      const user = usersData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+    if (updateErr) throw updateErr;
 
-      if (user) {
-        const { error } = await supabase.auth.admin.updateUserById(user.id, {
-          password: newPassword,
-        });
-
-        if (error) throw error;
-
-        return NextResponse.json({
-          success: true,
-          message: 'Пароль успешно сохранен',
-        });
-      }
-    }
-
-    return NextResponse.json(
-      { success: false, error: 'Пользователь не найден. Проверьте Email.' },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: 'Пароль успешно обновлён',
+    });
   } catch (error: any) {
     console.error('PATCH Reset password error:', error);
     return NextResponse.json(
