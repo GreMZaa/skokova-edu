@@ -2,22 +2,27 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
 
+function sanitizeStr(val: any): string {
+  if (typeof val !== 'string') return '';
+  return val.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
 
-    const slot_id = formData.get('slot_id') as string;
-    const service_title = formData.get('service_title') as string;
-    const price = parseFloat(formData.get('price') as string || '0');
-    const selected_date = formData.get('selected_date') as string;
-    const selected_slot_time = formData.get('selected_slot_time') as string;
+    const slot_id = sanitizeStr(formData.get('slot_id'));
+    const service_title = sanitizeStr(formData.get('service_title'));
+    const price = parseFloat(sanitizeStr(formData.get('price')) || '0');
+    const selected_date = sanitizeStr(formData.get('selected_date'));
+    const selected_slot_time = sanitizeStr(formData.get('selected_slot_time'));
 
-    const parent_name = formData.get('parent_name') as string;
-    const phone = formData.get('phone') as string;
-    const telegram_handle = formData.get('telegram_handle') as string;
-    const child_name = formData.get('child_name') as string;
-    const child_grade = formData.get('child_grade') as GradeLevel;
-    const comment = formData.get('comment') as string;
+    const parent_name = sanitizeStr(formData.get('parent_name'));
+    const phone = sanitizeStr(formData.get('phone'));
+    const telegram_handle = sanitizeStr(formData.get('telegram_handle'));
+    const child_name = sanitizeStr(formData.get('child_name'));
+    const child_grade = sanitizeStr(formData.get('child_grade')) as GradeLevel;
+    const comment = sanitizeStr(formData.get('comment'));
 
     const receipt_file = formData.get('receipt_file') as File | null;
 
@@ -29,36 +34,48 @@ export async function POST(req: Request) {
     }
 
     let receipt_file_url = '';
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = sanitizeStr(process.env.NEXT_PUBLIC_SUPABASE_URL);
+    const supabaseServiceKey = sanitizeStr(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    // 1. Загрузка файла в Supabase Storage если подключены ключи
+    // 1. Загрузка файла в Supabase Storage
     if (receipt_file && supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
-      const supabase = createAdminClient();
-      const fileExt = receipt_file.name.split('.').pop();
-      const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      try {
+        const supabase = createAdminClient();
+        const originalName = sanitizeStr(receipt_file.name || 'receipt.png');
+        const rawExt = originalName.split('.').pop() || 'png';
+        const fileExt = rawExt.replace(/[^a-zA-Z0-9]/g, '');
+        const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt || 'png'}`;
 
-      const fileBuffer = await receipt_file.arrayBuffer();
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('receipts')
-        .upload(fileName, fileBuffer, {
-          contentType: receipt_file.type,
-          upsert: true,
-        });
+        const arrayBuffer = await receipt_file.arrayBuffer();
+        const fileBuffer = Buffer.from(arrayBuffer);
 
-      if (uploadError) {
-        console.error('Storage upload error:', uploadError);
-      } else if (uploadData) {
-        const { data: publicUrlData } = supabase.storage
+        const contentType = receipt_file.type && receipt_file.type.includes('/') 
+          ? receipt_file.type 
+          : 'image/png';
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
           .from('receipts')
-          .getPublicUrl(fileName);
-        receipt_file_url = publicUrlData.publicUrl;
+          .upload(fileName, fileBuffer, {
+            contentType,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error('Storage upload error:', uploadError);
+        } else if (uploadData) {
+          const { data: publicUrlData } = supabase.storage
+            .from('receipts')
+            .getPublicUrl(fileName);
+          receipt_file_url = publicUrlData.publicUrl;
+        }
+      } catch (storageErr) {
+        console.error('Failed to process receipt file upload:', storageErr);
       }
     } else if (receipt_file) {
       receipt_file_url = `https://storage.demo/receipts/${receipt_file.name}`;
     }
 
-    // 2. Сохранение заявки в БД
+    // 2. Сохранение заявки в БД Supabase
     let booking_id = `booking-${Date.now()}`;
     if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
       const supabase = createAdminClient();
@@ -84,9 +101,9 @@ export async function POST(req: Request) {
       if (bookingData) booking_id = bookingData.id;
     }
 
-    // 3. Отправка уведомления маме в Telegram (если заданы ключи бота)
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const teacherChatId = process.env.TELEGRAM_TEACHER_CHAT_ID;
+    // 3. Отправка уведомления маме в Telegram (если настроен бот)
+    const botToken = sanitizeStr(process.env.TELEGRAM_BOT_TOKEN);
+    const teacherChatId = sanitizeStr(process.env.TELEGRAM_TEACHER_CHAT_ID);
 
     if (botToken && teacherChatId && !botToken.includes('123456789')) {
       const gradeText = GRADE_LABELS[child_grade] || child_grade;
