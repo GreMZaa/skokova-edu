@@ -16,12 +16,13 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
-  ChevronRight,
   ShieldCheck,
-  Phone,
-  Send,
   Loader2,
   ExternalLink,
+  Edit2,
+  Trash2,
+  X,
+  Check,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
@@ -76,6 +77,12 @@ export default function ParentDashboardPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
 
+  // Редактирование карточки ребёнка
+  const [editingChildId, setEditingChildId] = useState<string | null>(null);
+  const [editChildName, setEditChildName] = useState('');
+  const [editChildGrade, setEditChildGrade] = useState<GradeLevel>('preschool_6');
+  const [savingChild, setSavingChild] = useState(false);
+
   // Модальное окно записи
   const [isBookingOpen, setIsBookingOpen] = useState(false);
 
@@ -86,7 +93,6 @@ export default function ParentDashboardPage() {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // 1. Проверка сессии
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
 
@@ -96,7 +102,6 @@ export default function ParentDashboardPage() {
       }
       setUserEmail(user.email || '');
 
-      // 2. Загрузка профиля
       const profRes = await fetch('/api/parent/profile');
       const profData = await profRes.json();
       if (profData.success) {
@@ -107,7 +112,6 @@ export default function ParentDashboardPage() {
         setChildren(profData.children || []);
       }
 
-      // 3. Загрузка записей уроков
       const bookRes = await fetch('/api/parent/bookings');
       const bookData = await bookRes.json();
       if (bookData.success) {
@@ -147,7 +151,7 @@ export default function ParentDashboardPage() {
 
       const data = await res.json();
       if (data.success) {
-        setProfileMsg('Профиль и список детей успешно обновлены!');
+        setProfileMsg('Профиль и данные семьи обновлены!');
         setNewChildName('');
         await loadDashboardData();
         setTimeout(() => setProfileMsg(''), 3000);
@@ -156,6 +160,51 @@ export default function ParentDashboardPage() {
       console.error('Save profile error:', e);
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleStartEditChild = (child: ChildItem) => {
+    setEditingChildId(child.id);
+    setEditChildName(child.name);
+    setEditChildGrade(child.grade);
+  };
+
+  const handleSaveEditChild = async (childId: string) => {
+    setSavingChild(true);
+    try {
+      const res = await fetch('/api/parent/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          child_id: childId,
+          name: editChildName,
+          grade: editChildGrade,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditingChildId(null);
+        await loadDashboardData();
+      }
+    } catch (e) {
+      console.error('Edit child error:', e);
+    } finally {
+      setSavingChild(false);
+    }
+  };
+
+  const handleDeleteChild = async (childId: string) => {
+    if (!confirm('Вы уверены, что хотите удалить профиль ребёнка из семьи?')) return;
+    try {
+      const res = await fetch(`/api/parent/profile?child_id=${childId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadDashboardData();
+      }
+    } catch (e) {
+      console.error('Delete child error:', e);
     }
   };
 
@@ -393,7 +442,7 @@ export default function ParentDashboardPage() {
                       ) : item.status === 'receipt_uploaded' ? (
                         <div className="text-xs text-[#595652] font-mono flex items-center gap-1.5">
                           <Clock className="w-4 h-4 text-[#C85A32] animate-pulse" />
-                          <span>Чек получен педагогом. Ссылка на подключение появится сразу после подтверждения.</span>
+                          <span>Чек получен педагогом. Ссылка появится после подтверждения.</span>
                         </div>
                       ) : (
                         <div />
@@ -442,7 +491,7 @@ export default function ParentDashboardPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="Например, Ольга Смирнова"
+                    placeholder="Например, Сергей"
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none"
@@ -489,7 +538,7 @@ export default function ParentDashboardPage() {
             <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 hard-shadow">
               <h3 className="font-serif font-bold text-xl text-[#1F1E1D] mb-4 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-[#C85A32]" />
-                <span>Профили детей</span>
+                <span>Профили детей ({children.length})</span>
               </h3>
 
               <div className="space-y-3 mb-6">
@@ -501,17 +550,92 @@ export default function ParentDashboardPage() {
                   children.map((c) => (
                     <div
                       key={c.id}
-                      className="p-3.5 rounded-2xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] flex items-center justify-between"
+                      className="p-4 rounded-2xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] transition-all hover:border-[#1F1E1D]"
                     >
-                      <div>
-                        <div className="font-bold text-sm text-[#1F1E1D]">{c.name}</div>
-                        <div className="text-xs font-mono text-[#595652]">
-                          {GRADE_LABELS[c.grade] || c.grade}
+                      {editingChildId === c.id ? (
+                        /* Режим редактирования карточки ребенка */
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono font-bold uppercase text-[#595652]">
+                              Имя ребёнка:
+                            </label>
+                            <input
+                              type="text"
+                              value={editChildName}
+                              onChange={(e) => setEditChildName(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl border-2 border-[#1F1E1D] bg-white text-xs font-bold text-[#1F1E1D] outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono font-bold uppercase text-[#595652]">
+                              Класс / Возраст:
+                            </label>
+                            <select
+                              value={editChildGrade}
+                              onChange={(e) => setEditChildGrade(e.target.value as GradeLevel)}
+                              className="w-full px-3 py-2 rounded-xl border-2 border-[#1F1E1D] bg-white text-xs font-bold text-[#1F1E1D] outline-none"
+                            >
+                              <option value="preschool_5">Подготовка к школе (5 лет)</option>
+                              <option value="preschool_6">Подготовка к школе (6 лет / Перед 1 классом)</option>
+                              <option value="grade_1">1 класс</option>
+                              <option value="grade_2">2 класс</option>
+                              <option value="grade_3">3 класс</option>
+                              <option value="grade_4">4 класс</option>
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditChild(c.id)}
+                              disabled={savingChild}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Сохранить</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingChildId(null)}
+                              className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-[#1F1E1D] font-mono text-xs font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Отмена</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="px-2.5 py-1 rounded-full bg-[#C85A32]/10 text-[#C85A32] font-mono font-bold text-[10px]">
-                        Профиль добавлен
-                      </div>
+                      ) : (
+                        /* Обычный режим отображения карточки */
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-sm text-[#1F1E1D]">{c.name}</div>
+                            <div className="text-xs font-mono text-[#595652]">
+                              {GRADE_LABELS[c.grade] || c.grade}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditChild(c)}
+                              title="Редактировать карточку ребёнка"
+                              className="p-2 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] hover:border-[#1F1E1D] text-[#595652] hover:text-[#C85A32] transition-colors cursor-pointer"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteChild(c.id)}
+                              title="Удалить карточку ребёнка"
+                              className="p-2 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -520,7 +644,7 @@ export default function ParentDashboardPage() {
               {/* Добавление нового ребёнка */}
               <div className="border-t border-[#1F1E1D]/10 pt-4 space-y-3">
                 <span className="font-mono text-xs font-bold uppercase text-[#595652] block">
-                  ➕ Добавить ребёнка:
+                  ➕ Добавить нового ребёнка в семью:
                 </span>
                 <input
                   type="text"
