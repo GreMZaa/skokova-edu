@@ -61,6 +61,13 @@ interface ParentProfile {
   telegram_handle: string;
 }
 
+interface Requisites {
+  phone: string;
+  card_number: string;
+  bank_name: string;
+  recipient: string;
+}
+
 export default function ParentDashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'bookings' | 'profile'>('bookings');
@@ -70,6 +77,14 @@ export default function ParentDashboardPage() {
   const [profile, setProfile] = useState<ParentProfile>({ full_name: '', phone: '', telegram_handle: '' });
   const [children, setChildren] = useState<ChildItem[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
+
+  // Реквизиты оплаты СБП из базы данных
+  const [requisites, setRequisites] = useState<Requisites>({
+    phone: '+7 (926) 123-45-67',
+    card_number: '',
+    bank_name: 'Т-Банк / Сбербанк',
+    recipient: 'Скокова Юлия Павловна',
+  });
 
   // Состояние обновления профиля
   const [editingName, setEditingName] = useState('');
@@ -93,7 +108,8 @@ export default function ParentDashboardPage() {
   const [payReceiptFile, setPayReceiptFile] = useState<File | null>(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [payError, setPayError] = useState('');
-  const [isCopied, setIsCopied] = useState(false);
+  const [paySuccessMsg, setPaySuccessMsg] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Модальное окно записи
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -113,6 +129,13 @@ export default function ParentDashboardPage() {
         return;
       }
       setUserEmail(user.email || '');
+
+      // Загружаем актуальные реквизиты СБП из API
+      const reqRes = await fetch('/api/settings');
+      const reqData = await reqRes.json();
+      if (reqData.success && reqData.requisites) {
+        setRequisites(reqData.requisites);
+      }
 
       const profRes = await fetch('/api/parent/profile');
       const profData = await profRes.json();
@@ -220,10 +243,10 @@ export default function ParentDashboardPage() {
     }
   };
 
-  const handleCopyCard = () => {
-    navigator.clipboard.writeText('+7 (926) 123-45-67');
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
+  const handleCopyText = (text: string, fieldName: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
   const handlePaySubmit = async (e: React.FormEvent) => {
@@ -259,8 +282,7 @@ export default function ParentDashboardPage() {
         throw new Error(data.error || 'Ошибка отправки чека');
       }
 
-      setPayModalBooking(null);
-      setPayReceiptFile(null);
+      setPaySuccessMsg(true);
       await loadDashboardData();
     } catch (err: any) {
       console.error('Pay submit error:', err);
@@ -309,9 +331,9 @@ export default function ParentDashboardPage() {
         );
       default:
         return (
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#C85A32]/30 bg-[#C85A32]/10 text-[#C85A32] text-xs font-mono font-bold">
-            <Clock className="w-3.5 h-3.5" />
-            <span>Чек отправлен — На проверке</span>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 text-xs font-mono font-bold">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>🧾 Чек загружен — На проверке преподавателем</span>
           </div>
         );
     }
@@ -514,6 +536,7 @@ export default function ParentDashboardPage() {
                             setPayModalBooking(item);
                             setPayReceiptFile(null);
                             setPayError('');
+                            setPaySuccessMsg(false);
                           }}
                           className="px-5 py-3 rounded-xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-bold text-xs flex items-center gap-2 hard-shadow transition-all cursor-pointer"
                         >
@@ -533,8 +556,8 @@ export default function ParentDashboardPage() {
                         </a>
                       ) : item.status === 'receipt_uploaded' ? (
                         <div className="text-xs text-[#595652] font-mono flex items-center gap-1.5">
-                          <Clock className="w-4 h-4 text-[#C85A32] animate-pulse" />
-                          <span>Чек получен педагогом. Ссылка появится после подтверждения.</span>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Чек прикреплен и отправлен педагогу. Ожидается подтверждение.</span>
                         </div>
                       ) : (
                         <div />
@@ -545,10 +568,10 @@ export default function ParentDashboardPage() {
                           href={item.receipt_file_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="px-3.5 py-2 rounded-xl border border-[#1F1E1D]/20 bg-[#FAF8F5] hover:bg-white text-xs font-mono font-medium text-[#1F1E1D] flex items-center gap-1.5 transition-colors"
+                          className="px-3.5 py-2 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-xs font-mono font-bold text-emerald-900 flex items-center gap-1.5 transition-colors"
                         >
-                          <FileText className="w-3.5 h-3.5 text-[#C85A32]" />
-                          <span>Открыть прикрепленный чек</span>
+                          <FileText className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>👁 Открыть загруженный чек</span>
                         </a>
                       )}
                     </div>
@@ -652,7 +675,6 @@ export default function ParentDashboardPage() {
                       className="p-4 rounded-2xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] transition-all hover:border-[#1F1E1D]"
                     >
                       {editingChildId === c.id ? (
-                        /* Режим редактирования карточки ребенка */
                         <div className="space-y-3">
                           <div className="space-y-1">
                             <label className="text-[10px] font-mono font-bold uppercase text-[#595652]">
@@ -706,7 +728,6 @@ export default function ParentDashboardPage() {
                           </div>
                         </div>
                       ) : (
-                        /* Обычный режим отображения карточки */
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="font-bold text-sm text-[#1F1E1D]">{c.name}</div>
@@ -792,120 +813,191 @@ export default function ParentDashboardPage() {
                   Оплата урока по СБП
                 </h3>
                 <p className="text-xs text-[#595652] font-mono">
-                  {payModalBooking.service_title} • Заказ #{payModalBooking.id}
+                  {payModalBooking.service_title} • Заказ #{payModalBooking.id.substring(0, 13)}
                 </p>
               </div>
               <button
-                onClick={() => setPayModalBooking(null)}
+                onClick={() => {
+                  setPayModalBooking(null);
+                  setPaySuccessMsg(false);
+                }}
                 className="p-2 rounded-xl border border-[#1F1E1D]/20 hover:border-[#1F1E1D] bg-white text-[#1F1E1D]"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {payError && (
-              <div className="p-3 rounded-xl border border-red-500/30 bg-red-50 text-red-700 text-xs font-medium flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                <span>{payError}</span>
-              </div>
-            )}
-
-            <div className="p-4 bg-white border-2 border-[#1F1E1D] rounded-2xl hard-shadow space-y-3">
-              <div className="flex items-center justify-between text-xs font-mono text-[#595652]">
-                <span>Сумма к оплате:</span>
-                <span className="font-serif font-bold text-xl text-[#C85A32]">
-                  {payModalBooking.price.toLocaleString('ru-RU')} ₽
-                </span>
-              </div>
-
-              <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/10 space-y-1.5">
-                <span className="text-[11px] font-mono font-bold uppercase text-[#595652] block">
-                  Реквизиты для перевода (СБП):
-                </span>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-mono font-bold text-sm text-[#1F1E1D]">+7 (926) 123-45-67</div>
-                    <div className="text-[11px] text-[#595652]">Т-Банк / Сбербанк • Скокова Юлия Павловна</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyCard}
-                    className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    {isCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-600 font-bold">Скопировано</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
-                        <span>Копировать</span>
-                      </>
-                    )}
-                  </button>
+            {paySuccessMsg ? (
+              /* Экран успешной загрузки чека */
+              <div className="text-center py-6 space-y-4">
+                <div className="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full mx-auto flex items-center justify-center border-2 border-[#1F1E1D] hard-shadow">
+                  <CheckCircle2 className="w-10 h-10" />
                 </div>
+                <h3 className="font-serif font-extrabold text-2xl text-[#1F1E1D]">
+                  🎉 Чек успешно отправлен!
+                </h3>
+                <p className="text-xs text-[#595652] max-w-sm mx-auto leading-relaxed">
+                  Файл вашего чека получен и передан Скоковой Юлии Павловне. Статус вашей заявки изменён на <strong>«Чек загружен — На проверке»</strong>.
+                </p>
+                <button
+                  onClick={() => {
+                    setPayModalBooking(null);
+                    setPaySuccessMsg(false);
+                  }}
+                  className="px-6 py-3 rounded-xl bg-[#1F1E1D] hover:bg-[#C85A32] text-white font-mono text-xs font-bold hard-shadow cursor-pointer transition-colors"
+                >
+                  Отлично, вернуться к записям ➔
+                </button>
               </div>
-            </div>
+            ) : (
+              /* Экран ввода и загрузки */
+              <>
+                {payError && (
+                  <div className="p-3 rounded-xl border border-red-500/30 bg-red-50 text-red-700 text-xs font-medium flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                    <span>{payError}</span>
+                  </div>
+                )}
 
-            <form onSubmit={handlePaySubmit} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                  Прикрепите фото или PDF чека оплаты:
-                </label>
-                <div className="relative border-2 border-dashed border-[#1F1E1D]/30 hover:border-[#C85A32] rounded-2xl p-6 text-center bg-white transition-colors">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        setPayReceiptFile(e.target.files[0]);
-                        setPayError('');
-                      }
-                    }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <Upload className="w-8 h-8 text-[#C85A32]" />
+                <div className="p-4 bg-white border-2 border-[#1F1E1D] rounded-2xl hard-shadow space-y-3">
+                  <div className="flex items-center justify-between text-xs font-mono text-[#595652]">
+                    <span>Сумма к оплате:</span>
+                    <span className="font-serif font-bold text-xl text-[#C85A32]">
+                      {payModalBooking.price.toLocaleString('ru-RU')} ₽
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/15 space-y-2">
+                    <span className="text-[10px] font-mono font-bold uppercase text-[#595652] block">
+                      Реквизиты для перевода (СБП):
+                    </span>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-mono font-bold text-sm text-[#1F1E1D]">{requisites.phone}</div>
+                        <div className="text-[11px] text-[#595652]">{requisites.bank_name} • {requisites.recipient}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(requisites.phone, 'phone')}
+                        className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        {copiedField === 'phone' ? (
+                          <span className="text-emerald-600 font-bold">Скопировано!</span>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
+                            <span>Телефон</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {requisites.card_number && (
+                      <div className="flex items-center justify-between pt-2 border-t border-[#1F1E1D]/10">
+                        <div>
+                          <div className="font-mono font-bold text-sm text-[#1F1E1D]">{requisites.card_number}</div>
+                          <div className="text-[11px] text-[#595652]">Номер карты для прямого перевода</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(requisites.card_number, 'card')}
+                          className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          {copiedField === 'card' ? (
+                            <span className="text-emerald-600 font-bold">Скопировано!</span>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
+                              <span>Карта</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <form onSubmit={handlePaySubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                      Прикрепите фото или PDF чека оплаты:
+                    </label>
+
                     {payReceiptFile ? (
-                      <div>
-                        <div className="font-bold text-xs text-[#1F1E1D]">{payReceiptFile.name}</div>
-                        <div className="text-[10px] text-[#595652]">Размер: {(payReceiptFile.size / 1024 / 1024).toFixed(2)} МБ</div>
+                      /* Загруженный файл выбран — зеленая плашка подтверждения */
+                      <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl text-emerald-900 flex items-center justify-between font-mono text-xs hard-shadow">
+                        <div className="flex items-center gap-3 font-bold truncate">
+                          <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                          <div className="truncate">
+                            <div className="truncate text-emerald-950 font-extrabold">{payReceiptFile.name}</div>
+                            <div className="text-[10px] text-emerald-700 font-normal">Файл прикреплён и готов к отправке</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] bg-emerald-200/80 px-2 py-0.5 rounded font-bold shrink-0">
+                            {(payReceiptFile.size / 1024 / 1024).toFixed(2)} МБ
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPayReceiptFile(null)}
+                            title="Удалить и выбрать другой файл"
+                            className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ) : (
-                      <div>
-                        <div className="font-bold text-xs text-[#1F1E1D]">Нажмите или перетащите сюда чек</div>
-                        <div className="text-[10px] text-[#595652]">Поддерживаются JPG, PNG, PDF до 10 МБ</div>
+                      /* Окно перетаскивания файла */
+                      <div className="relative border-2 border-dashed border-[#1F1E1D]/30 hover:border-[#C85A32] rounded-2xl p-6 text-center bg-white transition-colors">
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              setPayReceiptFile(e.target.files[0]);
+                              setPayError('');
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Upload className="w-8 h-8 text-[#C85A32]" />
+                          <div>
+                            <div className="font-bold text-xs text-[#1F1E1D]">Нажмите или перетащите сюда чек</div>
+                            <div className="text-[10px] text-[#595652]">Поддерживаются JPG, PNG, PDF до 10 МБ</div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setPayModalBooking(null)}
-                  className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D]"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingPayment || !payReceiptFile}
-                  className="flex-1 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-40 text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {submittingPayment ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Отправка чека...</span>
-                    </>
-                  ) : (
-                    <span>Я оплатил(а), отправить чек</span>
-                  )}
-                </button>
-              </div>
-            </form>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setPayModalBooking(null)}
+                      className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D]"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingPayment || !payReceiptFile}
+                      className="flex-1 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-40 text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {submittingPayment ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Отправка чека...</span>
+                        </>
+                      ) : (
+                        <span>Я оплатил(а), отправить чек</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}

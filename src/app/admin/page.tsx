@@ -25,6 +25,8 @@ import {
   BookOpen,
   DollarSign,
   Check,
+  CreditCard,
+  Building,
 } from 'lucide-react';
 import { GRADE_LABELS, STATUS_LABELS, GradeLevel, BookingStatus } from '@/types/database';
 import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
@@ -70,6 +72,15 @@ export default function AdminPage() {
   const [auditLogs, setAuditLogs] = useState<LoginLog[]>([]);
   const [showLogsModal, setShowLogsModal] = useState<boolean>(false);
 
+  // Модальное окно реквизитов оплаты
+  const [showRequisitesModal, setShowRequisitesModal] = useState<boolean>(false);
+  const [reqPhone, setReqPhone] = useState<string>('+7 (926) 123-45-67');
+  const [reqCardNumber, setReqCardNumber] = useState<string>('');
+  const [reqBankName, setReqBankName] = useState<string>('Т-Банк / Сбербанк');
+  const [reqRecipient, setReqRecipient] = useState<string>('Скокова Юлия Павловна');
+  const [savingRequisites, setSavingRequisites] = useState<boolean>(false);
+  const [requisitesMsg, setRequisitesMsg] = useState<string>('');
+
   // Редактируемые поля модального окна
   const [editStatus, setEditStatus] = useState<BookingStatus>('pending_payment');
   const [editServiceTitle, setEditServiceTitle] = useState<string>('Онлайн-занятие (Индивидуально)');
@@ -92,8 +103,53 @@ export default function AdminPage() {
       setIsAuthenticated(true);
       fetchRealBookings();
       fetchAuditLogs();
+      fetchRequisites();
     }
   }, []);
+
+  const fetchRequisites = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      if (data.success && data.requisites) {
+        setReqPhone(data.requisites.phone || '');
+        setReqCardNumber(data.requisites.card_number || '');
+        setReqBankName(data.requisites.bank_name || '');
+        setReqRecipient(data.requisites.recipient || '');
+      }
+    } catch (e) {
+      console.error('Failed to fetch requisites:', e);
+    }
+  };
+
+  const handleSaveRequisites = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingRequisites(true);
+    setRequisitesMsg('');
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: reqPhone,
+          card_number: reqCardNumber,
+          bank_name: reqBankName,
+          recipient: reqRecipient,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setRequisitesMsg('Реквизиты СБП успешно сохранены в Supabase DB!');
+        setTimeout(() => setRequisitesMsg(''), 4000);
+      }
+    } catch (e) {
+      console.error('Save requisites error:', e);
+    } finally {
+      setSavingRequisites(false);
+    }
+  };
 
   const fetchRealBookings = async () => {
     setLoadingBookings(true);
@@ -144,6 +200,7 @@ export default function AdminPage() {
       sessionStorage.setItem('skokova_admin_auth', 'true');
       fetchRealBookings();
       fetchAuditLogs();
+      fetchRequisites();
     } catch (err: any) {
       setLoginError(err.message || 'Ошибка авторизации');
     } finally {
@@ -200,7 +257,6 @@ export default function AdminPage() {
     setEditServiceTitle(b.service_title || 'Онлайн-занятие (Индивидуально)');
     setEditPrice(b.price || (b.service_title?.includes('Оффлайн') ? 800 : 600));
 
-    // Очищаем строку даты от возможного дублирования времени
     let cleanDateStr = b.dateStr || '';
     let extractedTime = b.timeSlot || '14:00';
 
@@ -372,6 +428,14 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => setShowRequisitesModal(true)}
+              className="px-3.5 py-2 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <CreditCard className="w-4 h-4 text-[#C85A32]" />
+              <span>💳 Настройка реквизитов СБП</span>
+            </button>
+
             <button
               onClick={fetchRealBookings}
               title="Обновить список"
@@ -616,6 +680,108 @@ export default function AdminPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* МОДАЛЬНОЕ ОКНО НАСТРОЙКИ РЕКВИЗИТОВ ОПЛАТЫ */}
+        {showRequisitesModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 sm:p-8 hard-shadow-lg w-full max-w-lg space-y-6">
+              <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-4">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-[#C85A32]" />
+                  <h3 className="font-serif font-bold text-xl text-[#1F1E1D]">
+                    Настройка реквизитов СБП
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowRequisitesModal(false)}
+                  className="p-1 rounded-xl text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {requisitesMsg && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-mono font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{requisitesMsg}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveRequisites} className="space-y-4 text-xs font-mono">
+                <div className="space-y-1">
+                  <label className="font-bold uppercase text-[#595652]">Номер телефона для СБП *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="+7 (926) 123-45-67"
+                    value={reqPhone}
+                    onChange={(e) => setReqPhone(formatRussianPhone(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold uppercase text-[#595652]">Номер карты (необязательно)</label>
+                  <input
+                    type="text"
+                    placeholder="2202 2000 1234 5678"
+                    value={reqCardNumber}
+                    onChange={(e) => setReqCardNumber(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold uppercase text-[#595652]">Наименование банка *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Т-Банк / Сбербанк"
+                    value={reqBankName}
+                    onChange={(e) => setReqBankName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold uppercase text-[#595652]">ФИО получателя перевода *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Скокова Юлия Павловна"
+                    value={reqRecipient}
+                    onChange={(e) => setReqRecipient(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
+                  />
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowRequisitesModal(false)}
+                    className="px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 text-[#1F1E1D] font-bold cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingRequisites}
+                    className="px-6 py-2.5 rounded-xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-bold hard-shadow border-2 border-[#1F1E1D] cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {savingRequisites ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Сохранение...</span>
+                      </>
+                    ) : (
+                      <span>Сохранить реквизиты в Supabase DB</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 
