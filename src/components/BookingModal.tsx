@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { X, Calendar as CalendarIcon, Clock, Upload, CheckCircle2, AlertCircle, Copy, Check, Loader2, Sparkles, UserCheck } from 'lucide-react';
+import { X, Calendar as CalendarIcon, Clock, Upload, CheckCircle2, AlertCircle, Copy, Check, Loader2, Sparkles, UserCheck, ArrowRight } from 'lucide-react';
 import { SERVICES } from '@/data/services';
 import { GRADE_LABELS, GradeLevel, Service } from '@/types/database';
 import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
@@ -26,7 +27,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   onClose,
   initialServiceTitle = SERVICES[0].title,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const router = useRouter();
+  const [step, setStep] = useState<1 | 2 | 4>(1);
 
   // Выбор услуги и слота
   const [selectedService, setSelectedService] = useState<Service>(
@@ -54,10 +56,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Информация об автоматически созданном аккаунте
   const [createdAccountInfo, setCreatedAccountInfo] = useState<{ email: string } | null>(null);
 
-  // Оплата и чек
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [isCopied, setIsCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -122,9 +121,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           if (parsed.comment) setComment(capitalizeFirstLetter(parsed.comment));
           if (parsed.currentBookingId) setCurrentBookingId(parsed.currentBookingId);
           if (parsed.createdAccountInfo) setCreatedAccountInfo(parsed.createdAccountInfo);
-          if (parsed.step && parsed.step > 1 && parsed.step <= 3) {
-            setStep(parsed.step);
-          }
         } else {
           sessionStorage.removeItem(DRAFT_STORAGE_KEY);
         }
@@ -146,30 +142,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  const saveDraftToSession = (nextStep: 1 | 2 | 3, bookingId?: string, createdAcc?: { email: string }) => {
-    try {
-      const draftData = {
-        step: nextStep,
-        selectedService,
-        selectedDate,
-        selectedSlot,
-        parentName,
-        parentEmail,
-        phone,
-        telegramHandle,
-        childName,
-        childGrade,
-        comment,
-        currentBookingId: bookingId || currentBookingId,
-        createdAccountInfo: createdAcc || createdAccountInfo,
-        timestamp: Date.now(),
-      };
-      sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
-    } catch (e) {
-      console.error('Failed to save draft:', e);
-    }
-  };
-
   const clearDraft = () => {
     try {
       sessionStorage.removeItem(DRAFT_STORAGE_KEY);
@@ -177,24 +149,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   if (!isOpen) return null;
-
-  const handleCopyCard = () => {
-    navigator.clipboard.writeText('+7 (926) 123-45-67');
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) {
-        setErrorMsg('Размер файла не должен превышать 10 МБ');
-        return;
-      }
-      setErrorMsg('');
-      setReceiptFile(file);
-    }
-  };
 
   const handleGoToStep2 = () => {
     if (!selectedSlot) {
@@ -205,15 +159,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setStep(2);
   };
 
-  // Переход к оплате: Авто-создает аккаунт (если не авторизован), создает бронь и резервирует слот
-  const handleGoToStep3 = async (e: React.FormEvent) => {
+  // По клику на «Перейти к оплате»: создаёт кабинет (если не авторизован), создает бронь 'pending_payment' и открывает Шаг 4 с кнопкой «Перейти в Личный кабинет»
+  const handleGoToPaymentAndCabinet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!parentName.trim() || !phone.trim() || !childName.trim()) {
       setErrorMsg('Заполните обязательные поля: Имя родителя, Телефон и Имя ребёнка');
       return;
     }
     if (!userId && (!parentEmail || !parentEmail.includes('@'))) {
-      setErrorMsg('Пожалуйста, укажите верный Email для автоматического создания Личного кабинета');
+      setErrorMsg('Пожалуйста, укажите верный Email для создания Личного кабинета');
       return;
     }
     if (!consentChecked) {
@@ -228,7 +182,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     let newAccInfo = createdAccountInfo;
 
     try {
-      // 1. Если пользователь не авторизован, автоматически создаем аккаунт родителя
+      // 1. Если пользователь не авторизован — автоматически создаём аккаунт
       if (!currentUserId && parentEmail) {
         const password = phone.replace(/\D/g, '') || '2026skokova';
         const signupRes = await fetch('/api/parent/signup', {
@@ -260,7 +214,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         }
       }
 
-      // 2. Создание пред-заказа
+      // 2. Создание заказа со статусом 'pending_payment'
       const formData = new FormData();
       formData.append('slot_id', selectedSlot?.id || '');
       formData.append('service_title', selectedService.title);
@@ -290,8 +244,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       }
 
       setCurrentBookingId(data.booking_id);
-      saveDraftToSession(3, data.booking_id, newAccInfo || undefined);
-      setStep(3);
+      clearDraft();
+      setStep(4);
     } catch (err: any) {
       console.error('Pending booking creation error:', err);
       setErrorMsg(err.message || 'Ошибка создания заявки. Попробуйте еще раз.');
@@ -300,53 +254,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  // Отправка чека на Шаге 3
-  const handleSubmitBooking = async () => {
-    if (!receiptFile) {
-      setErrorMsg('Пожалуйста, загрузите файл чека или скриншот перевода');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMsg('');
-
-    try {
-      const formData = new FormData();
-      formData.append('booking_id', currentBookingId || '');
-      formData.append('slot_id', selectedSlot?.id || '');
-      formData.append('service_title', selectedService.title);
-      formData.append('price', selectedService.price.toString());
-      formData.append('selected_date', selectedDate);
-      formData.append('selected_slot_time', selectedSlot?.time || '');
-
-      formData.append('parent_name', parentName);
-      formData.append('phone', phone);
-      formData.append('telegram_handle', telegramHandle);
-      formData.append('child_name', childName);
-      formData.append('child_grade', childGrade);
-      formData.append('comment', comment);
-
-      formData.append('receipt_file', receiptFile);
-
-      const res = await fetch('/api/bookings', {
-        method: 'PATCH',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка при отправке заявки');
-      }
-
-      clearDraft();
-      setStep(4);
-    } catch (err: any) {
-      console.error('Booking submit error:', err);
-      setErrorMsg(err.message || 'Произошла ошибка при отправке заявки. Попробуйте еще раз.');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleNavigateToDashboard = () => {
+    onClose();
+    router.push('/my-dashboard');
   };
 
   return (
@@ -361,20 +271,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         <div className="flex items-center justify-between p-5 border-b-2 border-[#1F1E1D]/10 bg-white">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-[#C85A32] text-white flex items-center justify-center font-bold text-sm hard-shadow">
-              {step}
+              {step === 4 ? '✓' : step}
             </div>
             <div>
               <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
                 {step === 1 && 'Шаг 1: Выбор программы и времени'}
                 {step === 2 && 'Шаг 2: Анкетные данные ребёнка'}
-                {step === 3 && 'Шаг 3: Оплата по СБП и загрузка чека'}
-                {step === 4 && 'Заявка принята!'}
+                {step === 4 && 'Заявка забронирована!'}
               </h3>
               <p className="text-xs text-[#595652] font-mono">
                 {step === 1 && 'Выберите подходящий день и свободный слот'}
                 {step === 2 && 'Укажите информацию для подготовки к занятию'}
-                {step === 3 && 'Переведите оплату и прикрепите подтверждение'}
-                {step === 4 && 'Запись успешна, ожидайте подтверждения'}
+                {step === 4 && 'Перейдите в кабинет семьи для проведения оплаты'}
               </p>
             </div>
           </div>
@@ -509,7 +417,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
           {/* ШАГ 2: Анкета родителя и ребёнка */}
           {step === 2 && (
-            <form onSubmit={handleGoToStep3} className="space-y-4">
+            <form onSubmit={handleGoToPaymentAndCabinet} className="space-y-4">
               
               <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/10 text-xs flex items-center justify-between">
                 <span className="font-medium text-[#1F1E1D]">
@@ -521,12 +429,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               {userId ? (
                 <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-500/30 text-emerald-800 text-xs font-mono font-medium flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Вы авторизованы как {parentEmail || 'родитель'}. Личный кабинет подключён!</span>
+                  <span>Вы авторизованы как {parentEmail || 'родитель'}. Заявка появится в вашем кабинете!</span>
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-[#C85A32]/10 border border-[#C85A32]/30 text-[#C85A32] text-xs font-mono font-medium flex items-center gap-2">
                   <Sparkles className="w-4 h-4 shrink-0" />
-                  <span>При отправке формы ваш Личный кабинет семьи будет создан автоматически!</span>
+                  <span>При клике «Перейти к оплате» ваш Личный кабинет создаётся автоматически!</span>
                 </div>
               )}
 
@@ -713,7 +621,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] disabled:opacity-50 text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="flex-1 bg-[#C85A32] hover:bg-[#b04b27] disabled:opacity-50 text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
                     <>
@@ -721,7 +629,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       <span>Создание брони и кабинета...</span>
                     </>
                   ) : (
-                    <span>Перейти к оплате реквизитов ➔</span>
+                    <span>Перейти к оплате ➔</span>
                   )}
                 </button>
               </div>
@@ -729,156 +637,47 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             </form>
           )}
 
-          {/* ШАГ 3: Оплата СБП и Загрузка чека */}
-          {step === 3 && (
-            <div className="space-y-6">
-              
-              <div className="p-4 bg-white border-2 border-[#1F1E1D] rounded-2xl hard-shadow space-y-3">
-                <div className="flex items-center justify-between text-xs font-mono text-[#595652]">
-                  <span>Сумма к оплате:</span>
-                  <span className="font-serif font-bold text-lg text-[#C85A32]">
-                    {selectedService.price.toLocaleString('ru-RU')} ₽
-                  </span>
-                </div>
-
-                <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/10 space-y-1.5">
-                  <span className="text-[11px] font-mono font-bold uppercase text-[#595652] block">
-                    Реквизиты для перевода (СБП):
-                  </span>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-mono font-bold text-sm text-[#1F1E1D]">+7 (926) 123-45-67</div>
-                      <div className="text-[11px] text-[#595652]">Т-Банк / Сбербанк • Скокова Юлия Павловна</div>
-                    </div>
-                    <button
-                      onClick={handleCopyCard}
-                      className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      {isCopied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-600 font-bold">Скопировано</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
-                          <span>Копировать</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Поле загрузки файла */}
-              <div className="space-y-2">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                  Прикрепите фото или PDF чека оплаты:
-                </label>
-                <div className="relative border-2 border-dashed border-[#1F1E1D]/30 hover:border-[#C85A32] rounded-2xl p-6 text-center bg-white transition-colors">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileChange}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <Upload className="w-8 h-8 text-[#C85A32]" />
-                    {receiptFile ? (
-                      <div>
-                        <div className="font-bold text-xs text-[#1F1E1D]">{receiptFile.name}</div>
-                        <div className="text-[10px] text-[#595652]">Размер: {(receiptFile.size / 1024 / 1024).toFixed(2)} МБ</div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="font-bold text-xs text-[#1F1E1D]">Нажмите или перетащите сюда чек</div>
-                        <div className="text-[10px] text-[#595652]">Поддерживаются JPG, PNG, PDF до 10 МБ</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep(2);
-                  }}
-                  className="px-4 py-3.5 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
-                >
-                  Назад
-                </button>
-                <button
-                  onClick={handleSubmitBooking}
-                  disabled={isSubmitting || !receiptFile}
-                  className="flex-1 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-40 text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Отправка заявки и чека...</span>
-                    </>
-                  ) : (
-                    <span>Я оплатил(а), отправить заявку</span>
-                  )}
-                </button>
-              </div>
-
-            </div>
-          )}
-
-          {/* ШАГ 4: Успешное бронирование */}
+          {/* ШАГ 4: Успешное бронирование и переход в Личный Кабинет */}
           {step === 4 && (
-            <div className="text-center py-8 space-y-4">
+            <div className="text-center py-6 space-y-5">
               <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center hard-shadow border-2 border-[#1F1E1D]">
                 <CheckCircle2 className="w-10 h-10" />
               </div>
 
-              <h3 className="font-serif font-extrabold text-2xl text-[#1F1E1D]">
-                Заявка успешно отправлена!
-              </h3>
+              <div>
+                <h3 className="font-serif font-extrabold text-2xl text-[#1F1E1D]">
+                  Заявка успешно забронирована!
+                </h3>
+                <p className="text-xs font-mono text-[#595652] mt-1">
+                  Урок: {selectedService.title} • {selectedDate}, {selectedSlot?.time}
+                </p>
+              </div>
 
               {createdAccountInfo && (
-                <div className="p-4 bg-[#C85A32]/10 border-2 border-[#C85A32] rounded-2xl text-left space-y-2 max-w-md mx-auto my-4 hard-shadow">
+                <div className="p-4 bg-[#C85A32]/10 border-2 border-[#C85A32] rounded-2xl text-left space-y-2 max-w-md mx-auto hard-shadow">
                   <div className="font-bold text-xs text-[#1F1E1D] flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-[#C85A32]" />
-                    <span>🎉 Ваш Личный кабинет семьи создается и подключен!</span>
+                    <span>🎉 Личный кабинет семьи создан и активирован!</span>
                   </div>
                   <div className="text-xs text-[#595652] space-y-1 font-mono">
-                    <div>Логин: <strong className="text-[#1F1E1D]">{createdAccountInfo.email}</strong></div>
+                    <div>Логин для входа: <strong className="text-[#1F1E1D]">{createdAccountInfo.email}</strong></div>
                     <div>Пароль: <strong className="text-[#1F1E1D]">Ваш номер телефона</strong></div>
-                  </div>
-                  <div className="pt-1">
-                    <Link
-                      href="/my-dashboard"
-                      onClick={onClose}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono font-bold text-xs rounded-xl hard-shadow transition-colors"
-                    >
-                      <span>Перейти в Личный кабинет ➔</span>
-                    </Link>
                   </div>
                 </div>
               )}
 
               <p className="text-xs text-[#595652] max-w-md mx-auto leading-relaxed">
-                Спасибо! Скокова Юлия Павловна уже получила ваш чек и подтверждение оплаты. В ближайшее время она свяжется с вами или вышлет ссылку в Telegram.
+                Ваша заявка со статусом <strong>«⏳ Ожидает оплаты»</strong> уже добавлена в ваш Личный кабинет. Для оплаты по СБП и загрузки чека нажмите на кнопку ниже:
               </p>
 
-              <div className="pt-4 flex justify-center gap-3">
+              <div className="pt-2">
                 <button
-                  onClick={onClose}
-                  className="px-6 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-white hover:border-[#1F1E1D] text-[#1F1E1D] font-mono text-xs font-bold transition-colors cursor-pointer"
+                  onClick={handleNavigateToDashboard}
+                  className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono font-extrabold text-sm hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
                 >
-                  Вернуться на сайт
+                  <span>Перейти в Личный кабинет ➔</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
-                <Link
-                  href="/my-dashboard"
-                  onClick={onClose}
-                  className="px-6 py-3 rounded-xl bg-[#1F1E1D] text-white font-mono text-xs font-bold hard-shadow hover:bg-[#C85A32] transition-colors cursor-pointer flex items-center gap-2"
-                >
-                  <span>Мой кабинет ➔</span>
-                </Link>
               </div>
             </div>
           )}
