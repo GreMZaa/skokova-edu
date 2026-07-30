@@ -31,8 +31,11 @@ function getGeneratedDefaultSlots() {
   return dates;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const includeSlotId = searchParams.get('include_slot_id');
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -48,14 +51,19 @@ export async function GET() {
 
     const supabase = createAdminClient();
 
-    // 1. Получаем слоты из БД Supabase (исключаем забронированные и заблокированные на 15 минут)
+    // 1. Получаем слоты из БД Supabase (исключаем забронированные и заблокированные на 15 минут, кроме слота пользователя)
     const nowIso = new Date().toISOString();
+    let filterCondition = `locked_until.is.null,locked_until.lt.${nowIso}`;
+    if (includeSlotId) {
+      filterCondition += `,id.eq.${includeSlotId}`;
+    }
+
     let { data: dbSlots, error } = await supabase
       .from('time_slots')
       .select('*')
       .eq('is_booked', false)
       .gte('start_time', nowIso)
-      .or(`locked_until.is.null,locked_until.lt.${nowIso}`)
+      .or(filterCondition)
       .order('start_time', { ascending: true });
 
     if (error) {
@@ -90,53 +98,62 @@ export async function GET() {
         });
       }
 
-      const { data: insertedSlots, error: insertError } = await supabase
-        .from('time_slots')
-        .insert(newSlotsToInsert)
-        .select();
+      await supabase.from('time_slots').insert(newSlotsToInsert);
 
-      if (!insertError && insertedSlots) {
-        dbSlots = insertedSlots;
-      }
+      const retryRes = await supabase
+        .from('time_slots')
+        .select('*')
+        .eq('is_booked', false)
+        .gte('start_time', nowIso)
+        .or(filterCondition)
+        .order('start_time', { ascending: true });
+
+      dbSlots = retryRes.data || [];
     }
 
-    // 3. Группировка слотов из БД по датам
-    const groupedDates: Record<string, any[]> = {};
-    (dbSlots || []).forEach((slot: any) => {
-      const d = new Date(slot.start_time);
-      const dateStr = d.toLocaleDateString('ru-RU', {
+    // 3. Группируем слоты по красивым датам
+    const dateGroupsMap: { [key: string]: { dateStr: string; slots: { id: string; time: string; start_time: string }[] } } = {};
+
+    dbSlots.forEach((slot: any) => {
+      const startDate = new Date(slot.start_time);
+      const dateStrRaw = startDate.toLocaleDateString('ru-RU', {
         weekday: 'short',
         day: 'numeric',
         month: 'long',
       });
-      const formattedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+      const dateStrFormatted = dateStrRaw.charAt(0).toUpperCase() + dateStrRaw.slice(1);
 
-      if (!groupedDates[formattedDate]) {
-        groupedDates[formattedDate] = [];
+      const hours = startDate.getUTCHours().toString().padStart(2, '0');
+      const minutes = startDate.getUTCMinutes().toString().padStart(2, '0');
+      const timeStr = `${hours}:${minutes}`;
+
+      if (!dateGroupsMap[dateStrFormatted]) {
+        dateGroupsMap[dateStrFormatted] = {
+          dateStr: dateStrFormatted,
+          slots: [],
+        };
       }
 
-      groupedDates[formattedDate].push({
+      dateGroupsMap[dateStrFormatted].slots.push({
         id: slot.id,
-        time: d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+        time: timeStr,
         start_time: slot.start_time,
       });
     });
 
-    const formattedList = Object.keys(groupedDates).map((dateStr) => ({
-      dateStr,
-      slots: groupedDates[dateStr],
-    }));
+    const datesArray = Object.values(dateGroupsMap);
 
     return NextResponse.json({
       success: true,
-      source: 'database',
-      dates: formattedList.length > 0 ? formattedList : defaultSlotsGrouped,
+      source: 'supabase_db',
+      dates: datesArray.length > 0 ? datesArray : defaultSlotsGrouped,
     });
   } catch (error: any) {
-    console.error('API slots error:', error);
-    return NextResponse.json(
-      { success: true, error: error.message, dates: getGeneratedDefaultSlots() },
-      { status: 200 }
-    );
+    console.error('API slots route error:', error);
+    return NextResponse.json({
+      success: true,
+      source: 'route_error_fallback',
+      dates: getGeneratedDefaultSlots(),
+    });
   }
 }

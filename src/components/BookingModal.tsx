@@ -17,6 +17,8 @@ interface DateSlotGroup {
   slots: { id: string; time: string; start_time?: string }[];
 }
 
+const DRAFT_STORAGE_KEY = 'skokova_active_draft_booking';
+
 export const BookingModal: React.FC<BookingModalProps> = ({
   isOpen,
   onClose,
@@ -57,8 +59,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Загрузка слотов и данных родителя при открытии модального окна
   useEffect(() => {
     if (isOpen) {
-      fetchSlots();
       fetchUserData();
+      restoreDraftOrFetchSlots();
     }
   }, [isOpen]);
 
@@ -67,13 +69,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const res = await fetch('/api/parent/profile');
       const data = await res.json();
       if (data.success) {
-        if (data.profile.full_name) setParentName(data.profile.full_name);
-        if (data.profile.phone) setPhone(data.profile.phone);
-        if (data.profile.telegram_handle) setTelegramHandle(data.profile.telegram_handle);
+        if (data.profile.full_name) setParentName((prev) => prev || data.profile.full_name);
+        if (data.profile.phone) setPhone((prev) => prev || data.profile.phone);
+        if (data.profile.telegram_handle) setTelegramHandle((prev) => prev || data.profile.telegram_handle);
         if (data.children && data.children.length > 0) {
           setSavedChildren(data.children);
-          setChildName(data.children[0].name);
-          setChildGrade(data.children[0].grade);
+          setChildName((prev) => prev || data.children[0].name);
+          setChildGrade((prev) => prev || data.children[0].grade);
         }
       }
       const { createClient } = await import('@/lib/supabase/client');
@@ -87,20 +89,78 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  const fetchSlots = async () => {
+  const restoreDraftOrFetchSlots = async () => {
     setLoadingSlots(true);
+    let includeSlotId: string | null = null;
+
     try {
-      const res = await fetch('/api/slots');
+      const savedDraft = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        // Проверяем, что черновик создан менее 15 минут назад
+        if (parsed && Date.now() - parsed.timestamp < 15 * 60 * 1000) {
+          includeSlotId = parsed.selectedSlot?.id || null;
+          if (parsed.selectedService) {
+            const foundSvc = SERVICES.find((s) => s.id === parsed.selectedService.id);
+            if (foundSvc) setSelectedService(foundSvc);
+          }
+          if (parsed.selectedDate) setSelectedDate(parsed.selectedDate);
+          if (parsed.selectedSlot) setSelectedSlot(parsed.selectedSlot);
+          if (parsed.parentName) setParentName(parsed.parentName);
+          if (parsed.phone) setPhone(parsed.phone);
+          if (parsed.telegramHandle) setTelegramHandle(parsed.telegramHandle);
+          if (parsed.childName) setChildName(parsed.childName);
+          if (parsed.childGrade) setChildGrade(parsed.childGrade);
+          if (parsed.comment) setComment(parsed.comment);
+          if (parsed.step && parsed.step > 1 && parsed.step <= 3) {
+            setStep(parsed.step);
+          }
+        } else {
+          sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+        }
+      }
+
+      const url = includeSlotId ? `/api/slots?include_slot_id=${includeSlotId}` : '/api/slots';
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success && data.dates && data.dates.length > 0) {
         setAvailableDates(data.dates);
-        setSelectedDate(data.dates[0].dateStr);
+        if (!selectedDate) {
+          setSelectedDate(data.dates[0].dateStr);
+        }
       }
     } catch (e) {
-      console.error('Failed to load slots:', e);
+      console.error('Failed to load slots / restore draft:', e);
     } finally {
       setLoadingSlots(false);
     }
+  };
+
+  const saveDraftToSession = (nextStep: 1 | 2 | 3) => {
+    try {
+      const draftData = {
+        step: nextStep,
+        selectedService,
+        selectedDate,
+        selectedSlot,
+        parentName,
+        phone,
+        telegramHandle,
+        childName,
+        childGrade,
+        comment,
+        timestamp: Date.now(),
+      };
+      sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+    } catch (e) {
+      console.error('Failed to save draft:', e);
+    }
+  };
+
+  const clearDraft = () => {
+    try {
+      sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch (e) {}
   };
 
   if (!isOpen) return null;
@@ -140,6 +200,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       console.error('Slot lock error:', e);
     }
 
+    saveDraftToSession(2);
     setStep(2);
   };
 
@@ -154,6 +215,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
     setErrorMsg('');
+    saveDraftToSession(3);
     setStep(3);
   };
 
@@ -197,6 +259,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         throw new Error(data.error || 'Ошибка при отправке заявки');
       }
 
+      clearDraft();
       setStep(4);
     } catch (err: any) {
       console.error('Booking submit error:', err);
@@ -523,7 +586,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
+                  onClick={() => {
+                    saveDraftToSession(1);
+                    setStep(1);
+                  }}
                   className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
                 >
                   Назад
@@ -612,7 +678,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => {
+                    saveDraftToSession(2);
+                    setStep(2);
+                  }}
                   className="px-4 py-3.5 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D] transition-colors cursor-pointer"
                 >
                   Назад
