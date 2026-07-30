@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { X, Calendar as CalendarIcon, Clock, Upload, CheckCircle2, AlertCircle, Copy, Check, Loader2 } from 'lucide-react';
 import { SERVICES } from '@/data/services';
 import { GRADE_LABELS, GradeLevel, Service } from '@/types/database';
+import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -22,13 +23,13 @@ const DRAFT_STORAGE_KEY = 'skokova_active_draft_booking';
 export const BookingModal: React.FC<BookingModalProps> = ({
   isOpen,
   onClose,
-  initialServiceTitle = SERVICES[1].title,
+  initialServiceTitle = SERVICES[0].title,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Выбор услуги и слота
   const [selectedService, setSelectedService] = useState<Service>(
-    SERVICES.find((s) => s.title === initialServiceTitle) || SERVICES[1]
+    SERVICES.find((s) => s.title === initialServiceTitle) || SERVICES[0]
   );
   const [availableDates, setAvailableDates] = useState<DateSlotGroup[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -70,12 +71,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const res = await fetch('/api/parent/profile');
       const data = await res.json();
       if (data.success) {
-        if (data.profile.full_name) setParentName((prev) => prev || data.profile.full_name);
-        if (data.profile.phone) setPhone((prev) => prev || data.profile.phone);
-        if (data.profile.telegram_handle) setTelegramHandle((prev) => prev || data.profile.telegram_handle);
+        if (data.profile.full_name) setParentName((prev) => prev || capitalizeFirstLetter(data.profile.full_name));
+        if (data.profile.phone) setPhone((prev) => prev || formatRussianPhone(data.profile.phone));
+        if (data.profile.telegram_handle) setTelegramHandle((prev) => prev || formatTelegramHandle(data.profile.telegram_handle));
         if (data.children && data.children.length > 0) {
           setSavedChildren(data.children);
-          setChildName((prev) => prev || data.children[0].name);
+          setChildName((prev) => prev || capitalizeFirstLetter(data.children[0].name));
           setChildGrade((prev) => prev || data.children[0].grade);
         }
       }
@@ -106,12 +107,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           }
           if (parsed.selectedDate) setSelectedDate(parsed.selectedDate);
           if (parsed.selectedSlot) setSelectedSlot(parsed.selectedSlot);
-          if (parsed.parentName) setParentName(parsed.parentName);
-          if (parsed.phone) setPhone(parsed.phone);
-          if (parsed.telegramHandle) setTelegramHandle(parsed.telegramHandle);
-          if (parsed.childName) setChildName(parsed.childName);
+          if (parsed.parentName) setParentName(capitalizeFirstLetter(parsed.parentName));
+          if (parsed.phone) setPhone(formatRussianPhone(parsed.phone));
+          if (parsed.telegramHandle) setTelegramHandle(formatTelegramHandle(parsed.telegramHandle));
+          if (parsed.childName) setChildName(capitalizeFirstLetter(parsed.childName));
           if (parsed.childGrade) setChildGrade(parsed.childGrade);
-          if (parsed.comment) setComment(parsed.comment);
+          if (parsed.comment) setComment(capitalizeFirstLetter(parsed.comment));
           if (parsed.currentBookingId) setCurrentBookingId(parsed.currentBookingId);
           if (parsed.step && parsed.step > 1 && parsed.step <= 3) {
             setStep(parsed.step);
@@ -360,7 +361,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     <button
                       key={s.id}
                       onClick={() => setSelectedService(s)}
-                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
+                      className={`p-[#3.5] p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
                         selectedService.id === s.id
                           ? 'border-[#C85A32] bg-[#C85A32]/5 hard-shadow'
                           : 'border-[#1F1E1D]/20 bg-[#FAF8F5] hover:border-[#1F1E1D]'
@@ -475,9 +476,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <input
                     type="text"
                     required
+                    autoCapitalize="words"
                     placeholder="Например, Ольга"
                     value={parentName}
-                    onChange={(e) => setParentName(e.target.value)}
+                    onChange={(e) => setParentName(capitalizeFirstLetter(e.target.value))}
                     className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
                   />
                 </div>
@@ -491,8 +493,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     required
                     placeholder="+7 (9XX) XXX-XX-XX"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
+                    onFocus={() => {
+                      if (!phone) setPhone('+7 (');
+                    }}
+                    onChange={(e) => setPhone(formatRussianPhone(e.target.value))}
+                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono"
                   />
                 </div>
               </div>
@@ -513,7 +518,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                           setChildName('');
                         } else {
                           const found = savedChildren.find((c) => c.name === val);
-                          setChildName(val);
+                          setChildName(capitalizeFirstLetter(val));
                           if (found) setChildGrade(found.grade);
                         }
                       }}
@@ -531,9 +536,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       <input
                         type="text"
                         required
+                        autoCapitalize="words"
                         placeholder="Например, Артём"
                         value={childName}
-                        onChange={(e) => setChildName(e.target.value)}
+                        onChange={(e) => setChildName(capitalizeFirstLetter(e.target.value))}
                         className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
                       />
                       {savedChildren.length > 0 && (
@@ -542,7 +548,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                           onClick={() => {
                             setIsCustomChild(false);
                             if (savedChildren.length > 0) {
-                              setChildName(savedChildren[0].name);
+                              setChildName(capitalizeFirstLetter(savedChildren[0].name));
                               setChildGrade(savedChildren[0].grade);
                             }
                           }}
@@ -581,8 +587,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   type="text"
                   placeholder="@username"
                   value={telegramHandle}
-                  onChange={(e) => setTelegramHandle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
+                  onFocus={() => {
+                    if (!telegramHandle) setTelegramHandle('@');
+                  }}
+                  onChange={(e) => setTelegramHandle(formatTelegramHandle(e.target.value))}
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono"
                 />
               </div>
 
@@ -592,9 +601,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </label>
                 <textarea
                   rows={2}
+                  autoCapitalize="sentences"
                   placeholder="Плохо читает по слогам, нужно подтянуть решения задач..."
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => setComment(capitalizeFirstLetter(e.target.value))}
                   className="w-full px-3.5 py-2.5 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none"
                 />
               </div>

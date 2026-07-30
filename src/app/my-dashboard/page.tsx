@@ -27,6 +27,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
 import { BookingModal } from '@/components/BookingModal';
+import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
 
 interface BookingItem {
   id: string;
@@ -106,9 +107,9 @@ export default function ParentDashboardPage() {
       const profData = await profRes.json();
       if (profData.success) {
         setProfile(profData.profile);
-        setEditingName(profData.profile.full_name || '');
-        setEditingPhone(profData.profile.phone || '');
-        setEditingTg(profData.profile.telegram_handle || '');
+        setEditingName(capitalizeFirstLetter(profData.profile.full_name || ''));
+        setEditingPhone(formatRussianPhone(profData.profile.phone || ''));
+        setEditingTg(formatTelegramHandle(profData.profile.telegram_handle || ''));
         setChildren(profData.children || []);
       }
 
@@ -491,9 +492,10 @@ export default function ParentDashboardPage() {
                   </label>
                   <input
                     type="text"
+                    autoCapitalize="words"
                     placeholder="Например, Сергей"
                     value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
+                    onChange={(e) => setEditingName(capitalizeFirstLetter(e.target.value))}
                     className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none"
                   />
                 </div>
@@ -506,8 +508,11 @@ export default function ParentDashboardPage() {
                     type="tel"
                     placeholder="+7 (999) 000-00-00"
                     value={editingPhone}
-                    onChange={(e) => setEditingPhone(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none"
+                    onFocus={() => {
+                      if (!editingPhone) setEditingPhone('+7 (');
+                    }}
+                    onChange={(e) => setEditingPhone(formatRussianPhone(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none font-mono"
                   />
                 </div>
 
@@ -519,8 +524,11 @@ export default function ParentDashboardPage() {
                     type="text"
                     placeholder="@username"
                     value={editingTg}
-                    onChange={(e) => setEditingTg(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none"
+                    onFocus={() => {
+                      if (!editingTg) setEditingTg('@');
+                    }}
+                    onChange={(e) => setEditingTg(formatTelegramHandle(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none font-mono"
                   />
                 </div>
 
@@ -561,8 +569,9 @@ export default function ParentDashboardPage() {
                             </label>
                             <input
                               type="text"
+                              autoCapitalize="words"
                               value={editChildName}
-                              onChange={(e) => setEditChildName(e.target.value)}
+                              onChange={(e) => setEditChildName(capitalizeFirstLetter(e.target.value))}
                               className="w-full px-3 py-2 rounded-xl border-2 border-[#1F1E1D] bg-white text-xs font-bold text-[#1F1E1D] outline-none"
                             />
                           </div>
@@ -648,9 +657,10 @@ export default function ParentDashboardPage() {
                 </span>
                 <input
                   type="text"
+                  autoCapitalize="words"
                   placeholder="Имя ребёнка (напр., Артём)"
                   value={newChildName}
-                  onChange={(e) => setNewChildName(e.target.value)}
+                  onChange={(e) => setNewChildName(capitalizeFirstLetter(e.target.value))}
                   className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-xs font-medium text-[#1F1E1D] focus:border-[#1F1E1D] outline-none"
                 />
 
