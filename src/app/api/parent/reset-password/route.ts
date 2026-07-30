@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const cleanEmail = email.trim().toLowerCase();
     const supabase = createAdminClient();
 
-    // 1. Ищем пользователя по Email
+    // 1. Ищем пользователя по Email в Supabase Auth
     const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
 
     if (listErr || !usersData?.users) {
@@ -30,40 +30,30 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Пользователь с такой почтой не найден. Пожалуйста, проверьте Email или зарегистрируйтесь.',
+          error: 'Пользователь с такой почтой не найден. Пожалуйста, проверьте введённый Email или зарегистрируйтесь.',
         },
         { status: 444 }
       );
     }
 
-    // 2. Генерируем новый надежный временный пароль
-    const randomDigits = Math.floor(100000 + Math.random() * 900000);
-    const newTempPassword = `Skokova-${randomDigits}`;
-
-    // 3. Обновляем пароль пользователя в Supabase Auth
-    const { error: updateErr } = await supabase.auth.admin.updateUserById(user.id, {
-      password: newTempPassword,
+    // 2. Безопасная отправка ссылки восстановления пароля на Email
+    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://skokova-edu.vercel.app';
+    const { error: resetErr } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: cleanEmail,
+      options: {
+        redirectTo: `${siteUrl}/login?reset=true`,
+      },
     });
 
-    if (updateErr) {
-      throw updateErr;
-    }
-
-    // 4. Попытка генерации стандартного recovery линка Supabase (если отправка писем активна)
-    try {
-      await supabase.auth.admin.generateLink({
-        type: 'recovery',
-        email: cleanEmail,
-      });
-    } catch (e) {
-      console.log('Recovery email generateLink non-critical error:', e);
+    if (resetErr) {
+      console.error('Generate recovery link error:', resetErr);
     }
 
     return NextResponse.json({
       success: true,
       email: cleanEmail,
-      tempPassword: newTempPassword,
-      message: `Временный пароль успешно отправлен на ${cleanEmail}!`,
+      message: `Ссылка для восстановления пароля выслана на вашу электронную почту ${cleanEmail}. Проверьте Входящие или Спам!`,
     });
   } catch (error: any) {
     console.error('Reset password error:', error);
