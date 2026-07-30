@@ -443,7 +443,7 @@ export default function AdminPage() {
                 >
                   <div className="space-y-3">
                     <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-3">
-                      <span className="text-xs font-mono text-[#595652]">ID: {b.id.substring(0, 13)}</span>
+                      <span className="text-xs font-mono font-bold text-[#595652]">ID: #{b.id.substring(0, 13)}</span>
                       {renderStatusBadge()}
                     </div>
 

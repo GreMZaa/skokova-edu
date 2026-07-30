@@ -456,7 +456,7 @@ export default function ParentDashboardPage() {
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           {getStatusBadge(item.status)}
                           <span className="text-xs font-mono font-bold text-[#1F1E1D] bg-[#FAF8F5] px-2.5 py-1 rounded-lg border border-[#1F1E1D]/20">
-                            ID: #{item.id}
+                            ID: #{item.id.substring(0, 13)}
                           </span>
                         </div>
                         <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#1F1E1D]">
