@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Calendar, CheckCircle2, Clock, XCircle, Edit, ExternalLink, Phone, MessageSquare, Filter, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, CheckCircle2, Clock, XCircle, Edit, ExternalLink, Lock, KeyRound, LogOut, AlertCircle } from 'lucide-react';
 import { GRADE_LABELS, STATUS_LABELS, GradeLevel, BookingStatus } from '@/types/database';
 
 interface MockAdminBooking {
@@ -57,17 +57,104 @@ const INITIAL_MOCK_BOOKINGS: MockAdminBooking[] = [
 ];
 
 export default function AdminPage() {
+  // Состояние авторизации админа
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [inputPin, setInputPin] = useState<string>('');
+  const [loginError, setLoginError] = useState<string>('');
+
   const [bookings, setBookings] = useState<MockAdminBooking[]>(INITIAL_MOCK_BOOKINGS);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingBooking, setEditingBooking] = useState<MockAdminBooking | null>(null);
 
-  // Редактируемые поля в модальном окне
+  // Редактируемые поля
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editParent, setEditParent] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editChild, setEditChild] = useState('');
   const [editComment, setEditComment] = useState('');
+
+  // Проверка сессии в sessionStorage при загрузке
+  useEffect(() => {
+    const authStatus = sessionStorage.getItem('skokova_admin_auth');
+    if (authStatus === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Пароль по умолчанию: 2026 (или из переменной NEXT_PUBLIC_ADMIN_PIN)
+    const validPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '2026';
+
+    if (inputPin.trim() === validPin) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('skokova_admin_auth', 'true');
+      setLoginError('');
+    } else {
+      setLoginError('Неверный PIN-код или пароль администратора');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    sessionStorage.removeItem('skokova_admin_auth');
+    setInputPin('');
+  };
+
+  // ЭКРАН ВХОДА ДЛЯ АДМИНИСТРАТОРА
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] flex items-center justify-center p-4">
+        <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-8 hard-shadow-lg w-full max-w-md space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 rounded-full bg-[#C85A32]/10 border-2 border-[#1F1E1D] text-[#C85A32] flex items-center justify-center mx-auto hard-shadow">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h1 className="font-serif font-bold text-2xl text-[#1F1E1D]">
+              Вход в админ-панель
+            </h1>
+            <p className="text-xs font-mono text-[#595652]">
+              Скокова Юлия Павловна • Личный кабинет педагога
+            </p>
+          </div>
+
+          {loginError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                Введите PIN-код / Пароль доступа:
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  placeholder="••••"
+                  value={inputPin}
+                  onChange={(e) => setInputPin(e.target.value)}
+                  className="w-full px-4 py-3 text-sm rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none font-mono tracking-widest text-center text-lg"
+                />
+                <KeyRound className="w-4 h-4 text-gray-400 absolute right-3.5 top-3.5" />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-[#C85A32] hover:bg-[#b04b27] text-white text-sm font-semibold py-3.5 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer transition-all"
+            >
+              Войти в панель управления
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const filteredBookings = bookings.filter((b) => {
     if (filterStatus === 'all') return true;
@@ -127,9 +214,6 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-xs font-mono text-[#595652]">
-              Всего заявок: <span className="font-bold text-[#1F1E1D]">{bookings.length}</span>
-            </div>
             <a
               href="/"
               target="_blank"
@@ -138,6 +222,14 @@ export default function AdminPage() {
               <ExternalLink className="w-3.5 h-3.5" />
               <span>Перейти на сайт</span>
             </a>
+
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Выйти</span>
+            </button>
           </div>
         </div>
 
@@ -251,7 +343,7 @@ export default function AdminPage() {
                   {b.status !== 'cancelled' && (
                     <button
                       onClick={() => handleUpdateStatus(b.id, 'cancelled')}
-                      className="px-3 py-2 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-lg"
+                      className="px-3 py-2 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-lg cursor-pointer"
                     >
                       Отклонить
                     </button>
