@@ -27,6 +27,7 @@ import {
   Upload,
   Copy,
   Smartphone,
+  Lock,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
@@ -112,6 +113,13 @@ export default function ParentDashboardPage() {
   const [editChildName, setEditChildName] = useState('');
   const [editChildGrade, setEditChildGrade] = useState<GradeLevel>('preschool_6');
   const [savingChild, setSavingChild] = useState(false);
+
+  // Форма смены пароля
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState('');
+  const [passwordErr, setPasswordErr] = useState('');
 
   // Оплата из кабинета
   const [payModalBooking, setPayModalBooking] = useState<BookingItem | null>(null);
@@ -250,6 +258,42 @@ export default function ParentDashboardPage() {
       }
     } catch (e) {
       console.error('Delete child error:', e);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordMsg('');
+    setPasswordErr('');
+
+    if (!newPassword || newPassword.length < 6) {
+      setPasswordErr('Пароль должен содержать минимум 6 символов');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordErr('Введённые пароли не совпадают!');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+
+      setPasswordMsg('🎉 Пароль успешно изменён! Используйте его при следующих входах.');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordMsg(''), 4000);
+    } catch (err: any) {
+      console.error('Password change error:', err);
+      setPasswordErr(err.message || 'Ошибка смены пароля');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -664,6 +708,71 @@ export default function ParentDashboardPage() {
                   {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Сохранить профиль</span>}
                 </button>
               </form>
+
+              {/* Смена пароля */}
+              <div className="mt-8 pt-6 border-t-2 border-[#1F1E1D]/10 space-y-4 font-mono text-xs">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-[#C85A32]" />
+                  <h4 className="font-serif font-bold text-base text-[#1F1E1D]">Смена пароля аккаунта</h4>
+                </div>
+
+                {passwordMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{passwordMsg}</span>
+                  </div>
+                )}
+
+                {passwordErr && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-700 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>{passwordErr}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePassword} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="font-bold uppercase text-[#595652]">Новый пароль *</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="••••••••"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold uppercase text-[#595652]">Повторите новый пароль *</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={changingPassword || !newPassword}
+                    className="w-full py-2.5 px-4 rounded-xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-bold hard-shadow border-2 border-[#1F1E1D] cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40"
+                  >
+                    {changingPassword ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Обновление...</span>
+                      </>
+                    ) : (
+                      <span>Изменить пароль</span>
+                    )}
+                  </button>
+                </form>
+              </div>
             </div>
 
             {/* Карточки детей */}
