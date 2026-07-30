@@ -26,6 +26,7 @@ import {
   CreditCard,
   Upload,
   Copy,
+  Smartphone,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
@@ -61,11 +62,15 @@ interface ParentProfile {
   telegram_handle: string;
 }
 
-interface Requisites {
-  phone: string;
-  card_number: string;
+export interface PaymentMethodItem {
+  id: string;
+  type: 'sbp' | 'card';
+  title: string;
+  phone?: string;
+  card_number?: string;
   bank_name: string;
   recipient: string;
+  is_active: boolean;
 }
 
 export default function ParentDashboardPage() {
@@ -78,13 +83,18 @@ export default function ParentDashboardPage() {
   const [children, setChildren] = useState<ChildItem[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
 
-  // Реквизиты оплаты СБП из базы данных
-  const [requisites, setRequisites] = useState<Requisites>({
-    phone: '+7 (926) 123-45-67',
-    card_number: '',
-    bank_name: 'Т-Банк / Сбербанк',
-    recipient: 'Скокова Юлия Павловна',
-  });
+  // Карточки реквизитов оплаты из базы данных
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodItem[]>([
+    {
+      id: 'sbp_default',
+      type: 'sbp',
+      title: 'Перевод через СБП (по телефону)',
+      phone: '+7 (926) 123-45-67',
+      bank_name: 'Т-Банк / Сбербанк',
+      recipient: 'Скокова Юлия Павловна',
+      is_active: true,
+    },
+  ]);
 
   // Состояние обновления профиля
   const [editingName, setEditingName] = useState('');
@@ -130,11 +140,11 @@ export default function ParentDashboardPage() {
       }
       setUserEmail(user.email || '');
 
-      // Загружаем актуальные реквизиты СБП из API
+      // Загружаем актуальные способы оплаты из API
       const reqRes = await fetch('/api/settings');
       const reqData = await reqRes.json();
-      if (reqData.success && reqData.requisites) {
-        setRequisites(reqData.requisites);
+      if (reqData.success && reqData.payment_methods) {
+        setPaymentMethods(reqData.payment_methods);
       }
 
       const profRes = await fetch('/api/parent/profile');
@@ -541,7 +551,7 @@ export default function ParentDashboardPage() {
                           className="px-5 py-3 rounded-xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-bold text-xs flex items-center gap-2 hard-shadow transition-all cursor-pointer"
                         >
                           <CreditCard className="w-4 h-4" />
-                          <span>💳 Оплатить урок по СБП и прикрепить чек ➔</span>
+                          <span>💳 Оплатить урок по СБП / Карте и прикрепить чек ➔</span>
                         </button>
                       ) : item.status === 'confirmed' ? (
                         <a
@@ -803,14 +813,14 @@ export default function ParentDashboardPage() {
         )}
       </main>
 
-      {/* Модальное окно оплаты уроков СБП из кабинета */}
+      {/* Модальное окно оплаты уроков СБП / Картами из кабинета */}
       {payModalBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1F1E1D]/60 backdrop-blur-sm overflow-y-auto">
           <div className="relative w-full max-w-lg bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-3xl hard-shadow-lg p-6 space-y-6">
             <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-4">
               <div>
                 <h3 className="font-serif font-extrabold text-xl text-[#1F1E1D]">
-                  Оплата урока по СБП
+                  Оплата урока по СБП / Карте
                 </h3>
                 <p className="text-xs text-[#595652] font-mono">
                   {payModalBooking.service_title} • Заказ #{payModalBooking.id.substring(0, 13)}
@@ -867,53 +877,46 @@ export default function ParentDashboardPage() {
                     </span>
                   </div>
 
-                  <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/15 space-y-2">
+                  {/* Реквизиты оплаты (Карточки СБП и Карт) */}
+                  <div className="space-y-2.5">
                     <span className="text-[10px] font-mono font-bold uppercase text-[#595652] block">
-                      Реквизиты для перевода (СБП):
+                      Выберите удобный способ перевода:
                     </span>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-mono font-bold text-sm text-[#1F1E1D]">{requisites.phone}</div>
-                        <div className="text-[11px] text-[#595652]">{requisites.bank_name} • {requisites.recipient}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyText(requisites.phone, 'phone')}
-                        className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
-                      >
-                        {copiedField === 'phone' ? (
-                          <span className="text-emerald-600 font-bold">Скопировано!</span>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
-                            <span>Телефон</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
 
-                    {requisites.card_number && (
-                      <div className="flex items-center justify-between pt-2 border-t border-[#1F1E1D]/10">
-                        <div>
-                          <div className="font-mono font-bold text-sm text-[#1F1E1D]">{requisites.card_number}</div>
-                          <div className="text-[11px] text-[#595652]">Номер карты для прямого перевода</div>
+                    {paymentMethods.map((m) => (
+                      <div
+                        key={m.id}
+                        className="p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/15 flex items-center justify-between gap-3"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="text-[10px] font-mono font-bold text-[#C85A32] flex items-center gap-1">
+                            {m.type === 'sbp' ? <Smartphone className="w-3 h-3 text-purple-600" /> : <CreditCard className="w-3 h-3 text-blue-600" />}
+                            <span>{m.title}</span>
+                          </div>
+                          <div className="font-mono font-extrabold text-sm text-[#1F1E1D]">
+                            {m.type === 'sbp' ? m.phone : m.card_number}
+                          </div>
+                          <div className="text-[11px] text-[#595652]">
+                            {m.bank_name} • {m.recipient}
+                          </div>
                         </div>
+
                         <button
                           type="button"
-                          onClick={() => handleCopyText(requisites.card_number, 'card')}
-                          className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+                          onClick={() => handleCopyText(m.type === 'sbp' ? (m.phone || '') : (m.card_number || ''), m.id)}
+                          className="px-3 py-1.5 rounded-lg border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
                         >
-                          {copiedField === 'card' ? (
+                          {copiedField === m.id ? (
                             <span className="text-emerald-600 font-bold">Скопировано!</span>
                           ) : (
                             <>
                               <Copy className="w-3.5 h-3.5 text-[#C85A32]" />
-                              <span>Карта</span>
+                              <span>Копировать</span>
                             </>
                           )}
                         </button>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
 

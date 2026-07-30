@@ -27,6 +27,8 @@ import {
   Check,
   CreditCard,
   Building,
+  Plus,
+  Smartphone,
 } from 'lucide-react';
 import { GRADE_LABELS, STATUS_LABELS, GradeLevel, BookingStatus } from '@/types/database';
 import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
@@ -57,6 +59,17 @@ interface LoginLog {
   created_at: string;
 }
 
+export interface PaymentMethodItem {
+  id: string;
+  type: 'sbp' | 'card';
+  title: string;
+  phone?: string;
+  card_number?: string;
+  bank_name: string;
+  recipient: string;
+  is_active: boolean;
+}
+
 const AVAILABLE_TIMES = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
 export default function AdminPage() {
@@ -72,16 +85,22 @@ export default function AdminPage() {
   const [auditLogs, setAuditLogs] = useState<LoginLog[]>([]);
   const [showLogsModal, setShowLogsModal] = useState<boolean>(false);
 
-  // Модальное окно реквизитов оплаты
+  // Модальное окно способов оплаты
   const [showRequisitesModal, setShowRequisitesModal] = useState<boolean>(false);
-  const [reqPhone, setReqPhone] = useState<string>('+7 (926) 123-45-67');
-  const [reqCardNumber, setReqCardNumber] = useState<string>('');
-  const [reqBankName, setReqBankName] = useState<string>('Т-Банк / Сбербанк');
-  const [reqRecipient, setReqRecipient] = useState<string>('Скокова Юлия Павловна');
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodItem[]>([]);
   const [savingRequisites, setSavingRequisites] = useState<boolean>(false);
   const [requisitesMsg, setRequisitesMsg] = useState<string>('');
 
-  // Редактируемые поля модального окна
+  // Форма добавления нового способа оплаты (СБП / Карта)
+  const [showAddMethodForm, setShowAddMethodForm] = useState<boolean>(false);
+  const [newMethodType, setNewMethodType] = useState<'sbp' | 'card'>('sbp');
+  const [newMethodTitle, setNewMethodTitle] = useState<string>('Перевод через СБП');
+  const [newMethodPhone, setNewMethodPhone] = useState<string>('+7 (926) 123-45-67');
+  const [newMethodCard, setNewMethodCard] = useState<string>('2202 2000 1234 5678');
+  const [newMethodBank, setNewMethodBank] = useState<string>('Т-Банк / Сбербанк');
+  const [newMethodRecipient, setNewMethodRecipient] = useState<string>('Скокова Юлия Павловна');
+
+  // Редактируемые поля модального окна бронирования
   const [editStatus, setEditStatus] = useState<BookingStatus>('pending_payment');
   const [editServiceTitle, setEditServiceTitle] = useState<string>('Онлайн-занятие (Индивидуально)');
   const [editPrice, setEditPrice] = useState<number>(600);
@@ -111,19 +130,36 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/settings');
       const data = await res.json();
-      if (data.success && data.requisites) {
-        setReqPhone(data.requisites.phone || '');
-        setReqCardNumber(data.requisites.card_number || '');
-        setReqBankName(data.requisites.bank_name || '');
-        setReqRecipient(data.requisites.recipient || '');
+      if (data.success && data.payment_methods) {
+        setPaymentMethods(data.payment_methods);
       }
     } catch (e) {
       console.error('Failed to fetch requisites:', e);
     }
   };
 
-  const handleSaveRequisites = async (e: React.FormEvent) => {
+  const handleAddPaymentMethod = (e: React.FormEvent) => {
     e.preventDefault();
+    const newCard: PaymentMethodItem = {
+      id: `method_${Date.now()}`,
+      type: newMethodType,
+      title: newMethodTitle || (newMethodType === 'sbp' ? 'Перевод через СБП' : 'Перевод на карту'),
+      phone: newMethodType === 'sbp' ? newMethodPhone : undefined,
+      card_number: newMethodType === 'card' ? newMethodCard : undefined,
+      bank_name: newMethodBank,
+      recipient: newMethodRecipient,
+      is_active: true,
+    };
+
+    setPaymentMethods((prev) => [...prev, newCard]);
+    setShowAddMethodForm(false);
+  };
+
+  const handleDeletePaymentMethod = (id: string) => {
+    setPaymentMethods((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const handleSaveRequisites = async () => {
     setSavingRequisites(true);
     setRequisitesMsg('');
 
@@ -132,16 +168,13 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: reqPhone,
-          card_number: reqCardNumber,
-          bank_name: reqBankName,
-          recipient: reqRecipient,
+          payment_methods: paymentMethods,
         }),
       });
 
       const data = await res.json();
       if (data.success) {
-        setRequisitesMsg('Реквизиты СБП успешно сохранены в Supabase DB!');
+        setRequisitesMsg('Способы оплаты сохранены в Supabase DB!');
         setTimeout(() => setRequisitesMsg(''), 4000);
       }
     } catch (e) {
@@ -214,7 +247,6 @@ export default function AdminPage() {
     setInputPin('');
   };
 
-  // Изменение статуса заявки в Supabase
   const handleUpdateStatus = async (id: string, newStatus: BookingStatus) => {
     try {
       const res = await fetch('/api/admin/bookings', {
@@ -233,7 +265,6 @@ export default function AdminPage() {
     }
   };
 
-  // Удаление заявки из Supabase
   const handleDeleteBooking = async (id: string) => {
     if (!confirm('Вы уверены, что хотите удалить эту заявку из базы данных?')) return;
 
@@ -250,7 +281,6 @@ export default function AdminPage() {
     }
   };
 
-  // Открытие модального окна полного редактирования
   const handleOpenEdit = (b: AdminBooking) => {
     setEditingBooking(b);
     setEditStatus(b.status);
@@ -282,7 +312,6 @@ export default function AdminPage() {
     setEditDateISO(todayStr);
   };
 
-  // Выбор даты из календаря
   const handleDateChange = (isoDate: string) => {
     setEditDateISO(isoDate);
     if (!isoDate) return;
@@ -294,7 +323,6 @@ export default function AdminPage() {
     }
   };
 
-  // Сохранение отредактированных данных заявки в Supabase DB
   const handleSaveEdit = async () => {
     if (!editingBooking) return;
     setSavingEdit(true);
@@ -433,7 +461,7 @@ export default function AdminPage() {
               className="px-3.5 py-2 rounded-xl border border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center gap-2 transition-colors cursor-pointer"
             >
               <CreditCard className="w-4 h-4 text-[#C85A32]" />
-              <span>💳 Настройка реквизитов СБП</span>
+              <span>💳 Способы оплаты (СБП / Карта)</span>
             </button>
 
             <button
@@ -683,16 +711,21 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* МОДАЛЬНОЕ ОКНО НАСТРОЙКИ РЕКВИЗИТОВ ОПЛАТЫ */}
+        {/* МОДАЛЬНОЕ ОКНО НАСТРОЙКИ СПОСОБОВ ОПЛАТЫ (СБП / КАРТЫ) */}
         {showRequisitesModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 sm:p-8 hard-shadow-lg w-full max-w-lg space-y-6">
+            <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 sm:p-8 hard-shadow-lg w-full max-w-xl space-y-6 my-8">
               <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-4">
                 <div className="flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-[#C85A32]" />
-                  <h3 className="font-serif font-bold text-xl text-[#1F1E1D]">
-                    Настройка реквизитов СБП
-                  </h3>
+                  <CreditCard className="w-6 h-6 text-[#C85A32]" />
+                  <div>
+                    <h3 className="font-serif font-extrabold text-xl text-[#1F1E1D]">
+                      Способы оплаты и реквизиты
+                    </h3>
+                    <p className="text-xs text-[#595652] font-mono">
+                      Добавляйте карты или СБП, которые будут доступны родителям
+                    </p>
+                  </div>
                 </div>
                 <button
                   onClick={() => setShowRequisitesModal(false)}
@@ -709,78 +742,205 @@ export default function AdminPage() {
                 </div>
               )}
 
-              <form onSubmit={handleSaveRequisites} className="space-y-4 text-xs font-mono">
-                <div className="space-y-1">
-                  <label className="font-bold uppercase text-[#595652]">Номер телефона для СБП *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="+7 (926) 123-45-67"
-                    value={reqPhone}
-                    onChange={(e) => setReqPhone(formatRussianPhone(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
-                  />
-                </div>
+              {/* Список текущих вариантов оплаты */}
+              <div className="space-y-3">
+                <span className="font-mono text-xs font-bold uppercase text-[#595652] block">
+                  Активные карточки способов оплаты ({paymentMethods.length}):
+                </span>
 
-                <div className="space-y-1">
-                  <label className="font-bold uppercase text-[#595652]">Номер карты (необязательно)</label>
-                  <input
-                    type="text"
-                    placeholder="2202 2000 1234 5678"
-                    value={reqCardNumber}
-                    onChange={(e) => setReqCardNumber(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
-                  />
-                </div>
+                {paymentMethods.length === 0 ? (
+                  <div className="p-6 bg-[#FAF8F5] border-2 border-dashed border-[#1F1E1D]/20 rounded-2xl text-center text-xs font-mono text-[#595652]">
+                    Способы оплаты пока не добавлены. Нажмите кнопку ниже!
+                  </div>
+                ) : (
+                  paymentMethods.map((method) => (
+                    <div
+                      key={method.id}
+                      className="p-4 bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-2xl hard-shadow flex items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          {method.type === 'sbp' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-mono font-bold border border-purple-300">
+                              <Smartphone className="w-3 h-3 text-purple-600" />
+                              <span>СБП (Телефон)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-mono font-bold border border-blue-300">
+                              <CreditCard className="w-3 h-3 text-blue-600" />
+                              <span>Банковская карта</span>
+                            </span>
+                          )}
+                          <span className="font-bold text-xs text-[#1F1E1D]">{method.title}</span>
+                        </div>
 
-                <div className="space-y-1">
-                  <label className="font-bold uppercase text-[#595652]">Наименование банка *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Т-Банк / Сбербанк"
-                    value={reqBankName}
-                    onChange={(e) => setReqBankName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
-                  />
-                </div>
+                        <div className="font-mono font-extrabold text-base text-[#1F1E1D]">
+                          {method.type === 'sbp' ? method.phone : method.card_number}
+                        </div>
 
-                <div className="space-y-1">
-                  <label className="font-bold uppercase text-[#595652]">ФИО получателя перевода *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Скокова Юлия Павловна"
-                    value={reqRecipient}
-                    onChange={(e) => setReqRecipient(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none focus:border-[#C85A32]"
-                  />
-                </div>
+                        <div className="text-[11px] font-mono text-[#595652]">
+                          {method.bank_name} • Получатель: <strong className="text-[#1F1E1D]">{method.recipient}</strong>
+                        </div>
+                      </div>
 
-                <div className="pt-4 flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowRequisitesModal(false)}
-                    className="px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 text-[#1F1E1D] font-bold cursor-pointer"
-                  >
-                    Отмена
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePaymentMethod(method.id)}
+                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                        title="Удалить этот способ оплаты"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Форма добавления нового способа */}
+              {showAddMethodForm ? (
+                <form onSubmit={handleAddPaymentMethod} className="p-4 bg-white border-2 border-[#C85A32] rounded-2xl hard-shadow space-y-4 text-xs font-mono">
+                  <div className="flex items-center justify-between border-b border-[#1F1E1D]/10 pb-2">
+                    <span className="font-bold text-sm text-[#1F1E1D]">➕ Добавление способа оплаты</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddMethodForm(false)}
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold uppercase text-[#595652]">Выберите тип оплаты:</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewMethodType('sbp');
+                          setNewMethodTitle('Перевод через СБП (по телефону)');
+                        }}
+                        className={`py-2 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                          newMethodType === 'sbp'
+                            ? 'bg-[#C85A32] text-white border-[#1F1E1D]'
+                            : 'bg-[#FAF8F5] text-[#1F1E1D] border-[#1F1E1D]/20'
+                        }`}
+                      >
+                        <Smartphone className="w-4 h-4" />
+                        <span>СБП (Телефон)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewMethodType('card');
+                          setNewMethodTitle('Перевод по номеру карты');
+                        }}
+                        className={`py-2 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                          newMethodType === 'card'
+                            ? 'bg-[#C85A32] text-white border-[#1F1E1D]'
+                            : 'bg-[#FAF8F5] text-[#1F1E1D] border-[#1F1E1D]/20'
+                        }`}
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        <span>Банковская карта</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {newMethodType === 'sbp' ? (
+                    <div className="space-y-1">
+                      <label className="font-bold uppercase text-[#595652]">Номер телефона для СБП *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="+7 (926) 123-45-67"
+                        value={newMethodPhone}
+                        onChange={(e) => setNewMethodPhone(formatRussianPhone(e.target.value))}
+                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className="font-bold uppercase text-[#595652]">Номер банковской карты *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="2202 2000 1234 5678"
+                        value={newMethodCard}
+                        onChange={(e) => setNewMethodCard(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="font-bold uppercase text-[#595652]">Наименование банка *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Т-Банк / Сбербанк"
+                        value={newMethodBank}
+                        onChange={(e) => setNewMethodBank(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-bold uppercase text-[#595652]">ФИО получателя *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Скокова Юлия Павловна"
+                        value={newMethodRecipient}
+                        onChange={(e) => setNewMethodRecipient(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] font-bold text-[#1F1E1D] outline-none"
+                      />
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
-                    disabled={savingRequisites}
-                    className="px-6 py-2.5 rounded-xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-bold hard-shadow border-2 border-[#1F1E1D] cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                    className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer"
                   >
-                    {savingRequisites ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Сохранение...</span>
-                      </>
-                    ) : (
-                      <span>Сохранить реквизиты в Supabase DB</span>
-                    )}
+                    Готово, добавить карточку
                   </button>
-                </div>
-              </form>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAddMethodForm(true)}
+                  className="w-full py-3 px-4 rounded-2xl border-2 border-dashed border-[#1F1E1D]/30 hover:border-[#C85A32] bg-[#FAF8F5] text-xs font-mono font-bold text-[#1F1E1D] flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-4 h-4 text-[#C85A32]" />
+                  <span>Добавить карту или реквизиты СБП</span>
+                </button>
+              )}
+
+              <div className="pt-4 border-t border-[#1F1E1D]/10 flex justify-end gap-3 font-mono text-xs">
+                <button
+                  type="button"
+                  onClick={() => setShowRequisitesModal(false)}
+                  className="px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D]/20 text-[#1F1E1D] font-bold cursor-pointer"
+                >
+                  Закрыть
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRequisites}
+                  disabled={savingRequisites}
+                  className="px-6 py-2.5 rounded-xl bg-[#C85A32] hover:bg-[#b04b27] text-white font-bold hard-shadow border-2 border-[#1F1E1D] cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {savingRequisites ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Сохранение...</span>
+                    </>
+                  ) : (
+                    <span>Сохранить в Supabase DB</span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
