@@ -3,9 +3,8 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, BookOpen, Lock, Mail, User, Phone, CheckCircle2, AlertCircle, Loader2, KeyRound } from 'lucide-react';
+import { ArrowLeft, BookOpen, Lock, Mail, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { formatRussianPhone } from '@/lib/formatters';
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -17,7 +16,6 @@ function LoginContent() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -26,6 +24,7 @@ function LoginContent() {
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
+    // Слушаем клик по ссылке сброса пароля из письма (когда в URL есть reset=true или type=recovery в хеше)
     if (isResetModeParam || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
       setIsSetNewPasswordMode(true);
     }
@@ -36,7 +35,7 @@ function LoginContent() {
     setErrorMsg('');
     setSuccessMsg('');
 
-    // 1. Установка нового пароля после перехода из письма
+    // 1. Установка нового пароля ПОСЛЕ перехода по ссылке из ПИСЬМА
     if (isSetNewPasswordMode) {
       if (!password || password.length < 6) {
         setErrorMsg('Новый пароль должен содержать минимум 6 символов');
@@ -56,10 +55,10 @@ function LoginContent() {
 
         if (error) throw error;
 
-        setSuccessMsg('🎉 Новый пароль успешно сохранён! Переход в кабинет...');
+        setSuccessMsg('🎉 Новый пароль успешно сохранён! Выполняем вход в кабинет...');
         setTimeout(() => {
           window.location.href = '/my-dashboard';
-        }, 800);
+        }, 1000);
       } catch (err: any) {
         console.error('Update password error:', err);
         setErrorMsg(err.message || 'Ошибка обновления пароля');
@@ -69,49 +68,30 @@ function LoginContent() {
       return;
     }
 
-    // 2. Мгновенное и безопасное восстановление по Email + Номеру телефона
+    // 2. Отправка РЕАЛЬНОГО ПИСЬМА сброса пароля на почту
     if (isForgotPassword) {
       if (!email || !email.includes('@')) {
-        setErrorMsg('Пожалуйста, укажите корректный Email');
-        return;
-      }
-
-      if (!password || password.length < 6) {
-        setErrorMsg('Новый пароль должен содержать минимум 6 символов');
+        setErrorMsg('Пожалуйста, укажите корректную электронную почту');
         return;
       }
 
       setLoading(true);
       try {
-        const res = await fetch('/api/parent/reset-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, phone, newPassword: password }),
-        });
-
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Ошибка восстановления пароля');
-        }
-
-        setSuccessMsg('🎉 Пароль успешно изменён! Выполняем вход в кабинет...');
-        
-        // Автоматический вход с новым паролем
         const supabase = createClient();
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+        const siteUrl = window.location.origin || 'https://skokova-edu.vercel.app';
+        
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+          redirectTo: `${siteUrl}/login?reset=true`,
         });
 
-        if (!signInError) {
-          setTimeout(() => {
-            window.location.href = '/my-dashboard';
-          }, 800);
-        } else {
-          setIsForgotPassword(false);
-        }
+        if (error) throw error;
+
+        setSuccessMsg(
+          `✉️ Письмо со ссылкой для восстановления пароля отправлено на ваш Email (${email}). Пожалуйста, открывайте почту и перейдите по ссылке из письма!`
+        );
       } catch (err: any) {
-        setErrorMsg(err.message || 'Ошибка восстановления пароля');
+        console.error('Reset password email error:', err);
+        setErrorMsg(err.message || 'Не удалось отправить письмо. Проверьте Email!');
       } finally {
         setLoading(false);
       }
@@ -206,7 +186,7 @@ function LoginContent() {
           {isSetNewPasswordMode
             ? 'Новый пароль'
             : isForgotPassword
-            ? 'Мгновенное восстановление'
+            ? 'Восстановление доступа'
             : isRegister
             ? 'Регистрация родителя'
             : 'Кабинет родителя'}
@@ -217,7 +197,7 @@ function LoginContent() {
         {isSetNewPasswordMode
           ? 'Укажите новый пароль'
           : isForgotPassword
-          ? 'Смена и восстановление пароля'
+          ? 'Восстановление доступа'
           : isRegister
           ? 'Создать аккаунт семьи'
           : 'Вход в личный кабинет'}
@@ -226,7 +206,7 @@ function LoginContent() {
         {isSetNewPasswordMode
           ? 'Введите новый пароль для вашей учётной записи.'
           : isForgotPassword
-          ? 'Укажите ваш Email, номер телефона для подтверждения и придумайте новый пароль.'
+          ? 'Введите ваш email. Мы отправим вам письмо со ссылкой для сброса пароля.'
           : isRegister
           ? 'Зарегистрируйтесь, чтобы отслеживать уроки ребёнка и подключаться к видеосвязи'
           : 'Введите ваш email и пароль для доступа к истории занятий'}
@@ -251,6 +231,7 @@ function LoginContent() {
       {/* Форма */}
       <form onSubmit={handleAuth} className="space-y-4">
         {isSetNewPasswordMode ? (
+          /* Форма установки нового пароля после клика по ссылке из письма */
           <>
             <div className="space-y-1.5">
               <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
@@ -300,7 +281,7 @@ function LoginContent() {
             </button>
           </>
         ) : isForgotPassword ? (
-          /* Форма мгновенного сброса по Email + Телефон */
+          /* Форма запроса письма сброса пароля */
           <>
             <div className="space-y-1.5">
               <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
@@ -317,40 +298,6 @@ function LoginContent() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-[#C85A32]" />
-                <span>Ваш телефон при регистрации/записи *</span>
-              </label>
-              <input
-                type="tel"
-                required
-                placeholder="+7 (999) 000-00-00"
-                value={phone}
-                onFocus={() => {
-                  if (!phone) setPhone('+7 (');
-                }}
-                onChange={(e) => setPhone(formatRussianPhone(e.target.value))}
-                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none font-mono"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-[#C85A32]" />
-                <span>Придумайте новый пароль *</span>
-              </label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                placeholder="Минимум 6 символов"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none font-mono"
-              />
-            </div>
-
             <button
               type="submit"
               disabled={loading}
@@ -359,10 +306,10 @@ function LoginContent() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Проверка данных...</span>
+                  <span>Отправка письма...</span>
                 </>
               ) : (
-                <span>Подтвердить и войти с новым паролем ➔</span>
+                <span>Отправить ссылку на Email</span>
               )}
             </button>
           </>
