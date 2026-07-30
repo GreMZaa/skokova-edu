@@ -97,11 +97,6 @@ export async function PATCH(req: Request) {
     if (comment !== undefined) updates.comment = comment;
     if (admin_notes !== undefined) updates.admin_notes = admin_notes;
 
-    if (dateStr || timeSlot) {
-      const transferNote = `Перенесено на ${dateStr || ''} ${timeSlot || ''}`.trim();
-      updates.admin_notes = admin_notes ? `${admin_notes} (${transferNote})` : transferNote;
-    }
-
     const { data: updatedData, error } = await supabase
       .from('bookings')
       .update(updates)
