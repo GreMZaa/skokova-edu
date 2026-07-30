@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Генерируем безопасную ссылку сброса с явным перенаправлением на продакшн сайт
+    // 2. Генерируем ссылку восстановления через Admin API (без лимитов клиентской отправки)
     const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
       type: 'recovery',
       email: cleanEmail,
@@ -49,10 +49,18 @@ export async function POST(req: Request) {
 
     if (linkErr) {
       console.error('Generate recovery link error:', linkErr);
+      if (linkErr.message.includes('rate limit')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: '⏳ Слишком много запросов писем подряд. Пожалуйста, подождите 3-5 минут или проверьте уже полученное письмо на почте.',
+          },
+          { status: 429 }
+        );
+      }
       throw linkErr;
     }
 
-    // Корректируем redirect_to в ссылке, если в Supabase Dashboard до сих пор указан localhost
     let rawActionLink = linkData.properties?.action_link || '';
     if (rawActionLink.includes('localhost')) {
       rawActionLink = rawActionLink.replace(
@@ -64,12 +72,15 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       email: cleanEmail,
-      message: `✉️ Запрос на сброс пароля обработан для ${cleanEmail}!`,
+      message: `✉️ Запрос на сброс пароля отправлен для ${cleanEmail}. Проверьте вашу электронную почту (Входящие или Спам)!`,
     });
   } catch (error: any) {
     console.error('Reset password error:', error);
+    const msg = error.message?.includes('rate limit')
+      ? '⏳ Слишком много запросов подряд. Подождите 3-5 минут или откройте последнее полученное письмо.'
+      : error.message || 'Не удалось отправить ссылку сброса';
     return NextResponse.json(
-      { success: false, error: error.message || 'Не удалось отправить ссылку сброса' },
+      { success: false, error: msg },
       { status: 500 }
     );
   }

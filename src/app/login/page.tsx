@@ -27,7 +27,6 @@ function LoginContent() {
   useEffect(() => {
     const supabase = createClient();
 
-    // 1. Подписываемся на события аутентификации Supabase
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY' || (session && isResetModeParam)) {
         setIsSetNewPasswordMode(true);
@@ -37,7 +36,6 @@ function LoginContent() {
       }
     });
 
-    // 2. Если передан PKCE код ?code=...
     if (codeParam) {
       supabase.auth.exchangeCodeForSession(codeParam).then(({ data, error }) => {
         if (!error && data.session) {
@@ -80,7 +78,6 @@ function LoginContent() {
       try {
         let isSuccess = false;
 
-        // Попытка 1: Клиентское обновление в текущей сессии
         const { error: updateError } = await supabase.auth.updateUser({
           password: password,
         });
@@ -90,7 +87,6 @@ function LoginContent() {
         } else {
           console.warn('Client-side updateUser failed, trying server fallback:', updateError.message);
           
-          // Попытка 2: Серверный фолбэк для мобильных встроенных браузеров (Mail.ru/Safari In-App Browser)
           const fallbackEmail = email || (await supabase.auth.getUser()).data.user?.email;
           if (fallbackEmail) {
             const res = await fetch('/api/parent/reset-password', {
@@ -111,9 +107,8 @@ function LoginContent() {
         }
 
         if (isSuccess) {
-          setSuccessMsg('🎉 Новый пароль успешно сохранён! Выполняем вход...');
+          setSuccessMsg('🎉 Новый пароль успешно сохранён! Выполняем вход в кабинет...');
           
-          // Выполняем вход с новым паролем
           if (email) {
             await supabase.auth.signInWithPassword({ email, password });
           }
@@ -131,7 +126,7 @@ function LoginContent() {
       return;
     }
 
-    // 2. Отправка РЕАЛЬНОГО ПИСЬМА сброса пароля на почту
+    // 2. Запрос отправки ссылки сброса пароля через защищённый серверный API
     if (isForgotPassword) {
       if (!email || !email.includes('@')) {
         setErrorMsg('Пожалуйста, укажите корректную электронную почту');
@@ -140,20 +135,22 @@ function LoginContent() {
 
       setLoading(true);
       try {
-        const supabase = createClient();
-        const siteUrl = window.location.origin || 'https://skokova-edu.vercel.app';
-        
-        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-          redirectTo: `${siteUrl}/login?reset=true`,
+        const res = await fetch('/api/parent/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim().toLowerCase() }),
         });
 
-        if (error) throw error;
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Ошибка запроса сброса пароля');
+        }
 
         setSuccessMsg(
-          `✉️ Письмо со ссылкой для восстановления пароля отправлено на ваш Email (${email}). Пожалуйста, откройте почту и нажмите на ссылку из письма!`
+          data.message || `✉️ Ссылка для восстановления пароля отправлена на ваш Email (${email}). Пожалуйста, откройте почту и нажмите на ссылку из письма!`
         );
       } catch (err: any) {
-        console.error('Reset password email error:', err);
+        console.error('Reset password request error:', err);
         setErrorMsg(err.message || 'Не удалось отправить письмо. Проверьте Email!');
       } finally {
         setLoading(false);
