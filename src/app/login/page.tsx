@@ -38,8 +38,8 @@ export default function LoginPage() {
 
     try {
       if (isRegister) {
-        // Регистрация нового родителя
-        const { data, error } = await supabase.auth.signUp({
+        // 1. Регистрация нового родителя
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -49,13 +49,23 @@ export default function LoginPage() {
           },
         });
 
-        if (error) throw error;
+        if (signUpError) throw signUpError;
 
-        setSuccessMsg('Успешная регистрация! Выполняется вход...');
-        setTimeout(() => {
-          router.push('/my-dashboard');
-          router.refresh();
-        }, 1200);
+        // 2. Автоматический вход сразу после регистрации
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (!signInError) {
+          setSuccessMsg('Аккаунт успешно создан! Переход в кабинет...');
+          setTimeout(() => {
+            window.location.href = '/my-dashboard';
+          }, 800);
+        } else {
+          setSuccessMsg('Регистрация завершена! Нажмите «Войти в кабинет» ниже.');
+          setIsRegister(false);
+        }
       } else {
         // Вход существующего родителя
         const { error } = await supabase.auth.signInWithPassword({
@@ -67,9 +77,8 @@ export default function LoginPage() {
 
         setSuccessMsg('Успешный вход! Переход в кабинет...');
         setTimeout(() => {
-          router.push('/my-dashboard');
-          router.refresh();
-        }, 1000);
+          window.location.href = '/my-dashboard';
+        }, 800);
       }
     } catch (err: any) {
       console.error('Auth error:', err);
@@ -118,7 +127,7 @@ export default function LoginPage() {
           <p className="text-xs sm:text-sm text-[#595652] mb-6">
             {isRegister
               ? 'Зарегистрируйтесь, чтобы отслеживать уроки ребёнка и подключаться к видеосвязи'
-              : 'Введите ваши данные для доступа к истории занятий и ссылкам на уроки'}
+              : 'Введите ваш email и пароль для доступа к истории занятий'}
           </p>
 
           {/* Сообщение об ошибке */}
@@ -148,7 +157,7 @@ export default function LoginPage() {
                 <input
                   type="text"
                   required
-                  placeholder="Например, Анна Сергеевна"
+                  placeholder="Например, Сергей"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none transition-colors"
