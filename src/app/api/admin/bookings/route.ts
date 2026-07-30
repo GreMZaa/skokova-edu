@@ -27,7 +27,7 @@ function getSamaraISOString(dateISO: string, timeStr: string): { startISO: strin
   };
 }
 
-// GET: Получение всех реальных заявок из таблицы bookings в Supabase
+// GET: Получение всех реальных заявок из таблицы bookings в Supabase с ДИНАМИЧЕСКИМ форматированием даты из слота
 export async function GET() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,16 +47,18 @@ export async function GET() {
 
     const formattedBookings = (dbBookings || []).map((item: any) => {
       let dateStr = '';
+      let timeSlot = '';
       if (item.time_slots?.start_time) {
         const d = new Date(item.time_slots.start_time);
         const dayStr = d.toLocaleDateString('ru-RU', { timeZone: 'Europe/Samara', day: 'numeric', month: 'long', weekday: 'short' });
-        const timeStr = d.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Samara', hour: '2-digit', minute: '2-digit' });
-        dateStr = `${dayStr}, ${timeStr}`;
+        timeSlot = d.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Samara', hour: '2-digit', minute: '2-digit' });
+        dateStr = `${dayStr}, ${timeSlot}`;
       }
 
       return {
         ...item,
-        dateStr: dateStr || item.dateStr || '',
+        dateStr,
+        timeSlot,
       };
     });
 
