@@ -11,6 +11,8 @@ export async function POST(req: Request) {
 
     const supabase = createAdminClient();
 
+    let createdUser: any = null;
+
     // Создаем пользователя через Admin API с автоподтверждением email_confirm: true
     const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
       email,
@@ -20,24 +22,28 @@ export async function POST(req: Request) {
     });
 
     if (createErr) {
-      // Если пользователь уже был зарегистрирован с необработанным email — подтверждаем и обновляем ему пароль
+      // Если пользователь уже был зарегистрирован — обновляем пароль и автоподтверждаем
       const { data: listData } = await supabase.auth.admin.listUsers();
       const existingUser = listData?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
 
       if (existingUser) {
-        await supabase.auth.admin.updateUserById(existingUser.id, {
+        const { data: updatedData } = await supabase.auth.admin.updateUserById(existingUser.id, {
           email_confirm: true,
           password: password,
           user_metadata: { full_name: fullName },
         });
+        createdUser = updatedData?.user || existingUser;
       } else {
         throw createErr;
       }
+    } else {
+      createdUser = newUser.user;
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Аккаунт подтвержден и готов к входу',
+      user: createdUser ? { id: createdUser.id, email: createdUser.email } : null,
+      message: 'Аккаунт создается и готов к входу',
     });
   } catch (error: any) {
     console.error('Signup admin error:', error);
