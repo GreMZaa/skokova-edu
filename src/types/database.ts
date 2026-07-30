@@ -1,4 +1,4 @@
-export type BookingStatus = 'pending_payment' | 'receipt_uploaded' | 'confirmed' | 'rescheduled' | 'cancelled';
+export type BookingStatus = 'pending_payment' | 'receipt_uploaded' | 'confirmed' | 'rescheduled' | 'cancelled' | 'completed';
 
 export type GradeLevel = 
   | 'preschool_5' 
@@ -68,4 +68,5 @@ export const STATUS_LABELS: Record<BookingStatus, { label: string; color: string
   confirmed: { label: 'Запись подтверждена', color: 'emerald' },
   rescheduled: { label: 'Занятие перенесено', color: 'purple' },
   cancelled: { label: 'Заявка отменена', color: 'rose' },
+  completed: { label: 'Занятие завершено', color: 'sky' },
 };

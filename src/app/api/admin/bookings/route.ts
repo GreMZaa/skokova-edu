@@ -43,11 +43,25 @@ export async function GET() {
   }
 }
 
-// PATCH: Обновление статуса или данных заявки в Supabase
+// PATCH: Полное редактирование заявки администратором в Supabase
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, status, parent_name, phone, child_name, comment, dateStr, timeSlot } = body;
+    const {
+      id,
+      status,
+      service_title,
+      price,
+      parent_name,
+      phone,
+      telegram_handle,
+      child_name,
+      child_grade,
+      comment,
+      admin_notes,
+      dateStr,
+      timeSlot,
+    } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Booking ID is required' }, { status: 400 });
@@ -72,13 +86,20 @@ export async function PATCH(req: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    if (status) updates.status = status;
-    if (parent_name) updates.parent_name = parent_name;
-    if (phone) updates.phone = phone;
-    if (child_name) updates.child_name = child_name;
+    if (status !== undefined) updates.status = status;
+    if (service_title !== undefined) updates.service_title = service_title;
+    if (price !== undefined) updates.price = price;
+    if (parent_name !== undefined) updates.parent_name = parent_name;
+    if (phone !== undefined) updates.phone = phone;
+    if (telegram_handle !== undefined) updates.telegram_handle = telegram_handle;
+    if (child_name !== undefined) updates.child_name = child_name;
+    if (child_grade !== undefined) updates.child_grade = child_grade;
     if (comment !== undefined) updates.comment = comment;
+    if (admin_notes !== undefined) updates.admin_notes = admin_notes;
+
     if (dateStr || timeSlot) {
-      updates.admin_notes = `Перенесено админом на ${dateStr || ''} ${timeSlot || ''}`;
+      const transferNote = `Перенесено на ${dateStr || ''} ${timeSlot || ''}`.trim();
+      updates.admin_notes = admin_notes ? `${admin_notes} (${transferNote})` : transferNote;
     }
 
     const { data: updatedData, error } = await supabase
