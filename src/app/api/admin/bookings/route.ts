@@ -45,6 +45,15 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: true, message: 'Updated in demo mode' });
     }
 
+    const supabase = createAdminClient();
+
+    // Получаем старую запись для проверки slot_id
+    const { data: oldBooking } = await supabase
+      .from('bookings')
+      .select('slot_id')
+      .eq('id', id)
+      .single();
+
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
@@ -58,7 +67,6 @@ export async function PATCH(req: Request) {
       updates.admin_notes = `Перенесено админом на ${dateStr || ''} ${timeSlot || ''}`;
     }
 
-    const supabase = createAdminClient();
     const { data: updatedData, error } = await supabase
       .from('bookings')
       .update(updates)
@@ -67,6 +75,19 @@ export async function PATCH(req: Request) {
       .single();
 
     if (error) throw error;
+
+    // Если заявка отклонена/отменена — освобождаем слот расписания
+    if (status === 'cancelled' && oldBooking?.slot_id) {
+      await supabase
+        .from('time_slots')
+        .update({ is_booked: false, locked_until: null })
+        .eq('id', oldBooking.slot_id);
+    } else if (status === 'confirmed' && oldBooking?.slot_id) {
+      await supabase
+        .from('time_slots')
+        .update({ is_booked: true })
+        .eq('id', oldBooking.slot_id);
+    }
 
     return NextResponse.json({
       success: true,
@@ -93,6 +114,20 @@ export async function DELETE(req: Request) {
 
     if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
       const supabase = createAdminClient();
+      
+      const { data: oldBooking } = await supabase
+        .from('bookings')
+        .select('slot_id')
+        .eq('id', id)
+        .single();
+
+      if (oldBooking?.slot_id) {
+        await supabase
+          .from('time_slots')
+          .update({ is_booked: false, locked_until: null })
+          .eq('id', oldBooking.slot_id);
+      }
+
       const { error } = await supabase
         .from('bookings')
         .delete()

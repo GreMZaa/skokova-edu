@@ -99,6 +99,14 @@ export async function POST(req: Request) {
 
       if (bookingError) throw bookingError;
       if (bookingData) booking_id = bookingData.id;
+
+      // Помечаем слот как забронированный в базе данных time_slots, чтобы он исчез из свободных
+      if (slot_id) {
+        await supabase
+          .from('time_slots')
+          .update({ is_booked: true })
+          .eq('id', slot_id);
+      }
     }
 
     // 3. Отправка уведомления маме в Telegram (если настроен бот)
