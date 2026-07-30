@@ -48,12 +48,14 @@ export async function GET() {
 
     const supabase = createAdminClient();
 
-    // 1. Получаем слоты из БД Supabase
+    // 1. Получаем слоты из БД Supabase (исключаем забронированные и заблокированные на 15 минут)
+    const nowIso = new Date().toISOString();
     let { data: dbSlots, error } = await supabase
       .from('time_slots')
       .select('*')
       .eq('is_booked', false)
-      .gte('start_time', new Date().toISOString())
+      .gte('start_time', nowIso)
+      .or(`locked_until.is.null,locked_until.lt.${nowIso}`)
       .order('start_time', { ascending: true });
 
     if (error) {
