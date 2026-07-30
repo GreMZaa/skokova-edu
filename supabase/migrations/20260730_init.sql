@@ -1,6 +1,13 @@
 -- 1. Сборка пользовательских enum типов
-CREATE TYPE booking_status AS ENUM ('pending_payment', 'receipt_uploaded', 'confirmed', 'rescheduled', 'cancelled');
-CREATE TYPE grade_level AS ENUM ('preschool_5', 'preschool_6', 'grade_1', 'grade_2', 'grade_3', 'grade_4');
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'booking_status') THEN
+        CREATE TYPE booking_status AS ENUM ('pending_payment', 'receipt_uploaded', 'confirmed', 'rescheduled', 'cancelled');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'grade_level') THEN
+        CREATE TYPE grade_level AS ENUM ('preschool_5', 'preschool_6', 'grade_1', 'grade_2', 'grade_3', 'grade_4');
+    END IF;
+END $$;
 
 -- 2. Таблица слотов расписания педагога
 CREATE TABLE IF NOT EXISTS public.time_slots (
@@ -13,8 +20,8 @@ CREATE TABLE IF NOT EXISTS public.time_slots (
 );
 
 -- Индексы для быстрого поиска свободных слотов
-CREATE INDEX idx_time_slots_start_time ON public.time_slots(start_time);
-CREATE INDEX idx_time_slots_availability ON public.time_slots(is_booked, start_time);
+CREATE INDEX IF NOT EXISTS idx_time_slots_start_time ON public.time_slots(start_time);
+CREATE INDEX IF NOT EXISTS idx_time_slots_availability ON public.time_slots(is_booked, start_time);
 
 -- 3. Таблица заявок на обучение
 CREATE TABLE IF NOT EXISTS public.bookings (
@@ -42,8 +49,8 @@ CREATE TABLE IF NOT EXISTS public.bookings (
 );
 
 -- Индексы для фильтрации заявок админом и поиску по статусам
-CREATE INDEX idx_bookings_status ON public.bookings(status);
-CREATE INDEX idx_bookings_phone ON public.bookings(phone);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON public.bookings(status);
+CREATE INDEX IF NOT EXISTS idx_bookings_phone ON public.bookings(phone);
 
 -- 4. Функция временного запечатывания слота на 15 минут
 CREATE OR REPLACE FUNCTION lock_time_slot(p_slot_id UUID)
@@ -84,6 +91,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_bookings_modtime ON public.bookings;
 CREATE TRIGGER update_bookings_modtime
     BEFORE UPDATE ON public.bookings
     FOR EACH ROW
@@ -94,16 +102,19 @@ ALTER TABLE public.time_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
 -- Публичное чтение свободных слотов
+DROP POLICY IF EXISTS "Allow public read of active time slots" ON public.time_slots;
 CREATE POLICY "Allow public read of active time slots"
     ON public.time_slots FOR SELECT
     USING (TRUE);
 
 -- Публичное создание бронирования
+DROP POLICY IF EXISTS "Allow public insert into bookings" ON public.bookings;
 CREATE POLICY "Allow public insert into bookings"
     ON public.bookings FOR INSERT
     WITH CHECK (TRUE);
 
 -- Публичный выбор собственного бронирования по ID
+DROP POLICY IF EXISTS "Allow public select own booking" ON public.bookings;
 CREATE POLICY "Allow public select own booking"
     ON public.bookings FOR SELECT
     USING (TRUE);
@@ -114,10 +125,12 @@ VALUES ('receipts', 'receipts', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Политика публичной загрузки чеков в бакет
+DROP POLICY IF EXISTS "Allow public receipt uploads" ON storage.objects;
 CREATE POLICY "Allow public receipt uploads" 
     ON storage.objects FOR INSERT 
     WITH CHECK (bucket_id = 'receipts');
 
+DROP POLICY IF EXISTS "Allow public receipt view" ON storage.objects;
 CREATE POLICY "Allow public receipt view" 
     ON storage.objects FOR SELECT 
     USING (bucket_id = 'receipts');
@@ -134,10 +147,12 @@ CREATE TABLE IF NOT EXISTS public.admin_login_logs (
 
 ALTER TABLE public.admin_login_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow admin logs insert" ON public.admin_login_logs;
 CREATE POLICY "Allow admin logs insert"
     ON public.admin_login_logs FOR INSERT
     WITH CHECK (TRUE);
 
+DROP POLICY IF EXISTS "Allow admin logs view" ON public.admin_login_logs;
 CREATE POLICY "Allow admin logs view"
     ON public.admin_login_logs FOR SELECT
     USING (TRUE);
