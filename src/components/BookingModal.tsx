@@ -286,26 +286,38 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {/* Выбор временного слота */}
-              <div className="space-y-2">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                  Свободное время ({selectedDate}):
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {currentGroup?.slots.map((slot) => (
-                    <button
-                      key={slot.id}
-                      onClick={() => setSelectedSlot(slot)}
-                      className={`py-2.5 px-3 rounded-xl border-2 text-xs font-bold text-center transition-all cursor-pointer ${
-                        selectedSlot?.id === slot.id
-                          ? 'border-[#C85A32] bg-[#C85A32] text-white hard-shadow'
-                          : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
-                      }`}
-                    >
-                      {slot.time}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {(() => {
+                const activeDate = selectedDate || (availableDates.length > 0 ? availableDates[0].dateStr : '');
+                const currentGroup = availableDates.find((d) => d.dateStr === activeDate) || availableDates[0];
+
+                return (
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                      Свободное время ({activeDate}):
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {currentGroup?.slots?.map((slot) => (
+                        <button
+                          key={slot.id}
+                          onClick={() => {
+                            if (!selectedDate && availableDates.length > 0) {
+                              setSelectedDate(availableDates[0].dateStr);
+                            }
+                            setSelectedSlot(slot);
+                          }}
+                          className={`py-2.5 px-3 rounded-xl border-2 text-xs font-bold text-center transition-all cursor-pointer ${
+                            selectedSlot?.id === slot.id
+                              ? 'border-[#C85A32] bg-[#C85A32] text-white hard-shadow'
+                              : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
+                          }`}
+                        >
+                          {slot.time}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="pt-4">
                 <button
