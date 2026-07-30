@@ -2,12 +2,10 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowLeft, BookOpen, Lock, Mail, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [isRegister, setIsRegister] = useState(false);
 
   const [fullName, setFullName] = useState('');
@@ -38,47 +36,64 @@ export default function LoginPage() {
 
     try {
       if (isRegister) {
-        // 1. Регистрация нового родителя
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-            },
-          },
+        // 1. Создаем пользователя с мгновенным серверным подтверждением
+        const signupRes = await fetch('/api/parent/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, fullName }),
         });
 
-        if (signUpError) throw signUpError;
+        const signupData = await signupRes.json();
+        if (!signupData.success) {
+          throw new Error(signupData.error || 'Ошибка при регистрации');
+        }
 
-        // 2. Автоматический вход сразу после регистрации
+        // 2. Выполняем вход
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
-        if (!signInError) {
-          setSuccessMsg('Аккаунт успешно создан! Переход в кабинет...');
-          setTimeout(() => {
-            window.location.href = '/my-dashboard';
-          }, 800);
-        } else {
-          setSuccessMsg('Регистрация завершена! Нажмите «Войти в кабинет» ниже.');
-          setIsRegister(false);
-        }
+        if (signInError) throw signInError;
+
+        setSuccessMsg('Аккаунт создан и активирован! Переход в кабинет...');
+        setTimeout(() => {
+          window.location.href = '/my-dashboard';
+        }, 600);
       } else {
         // Вход существующего родителя
-        const { error } = await supabase.auth.signInWithPassword({
+        let { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
-        if (error) throw error;
+        // Если не удалось войти из-за непотвержденного ранее Email — авто-подтверждаем через серверную ручку и входим
+        if (error && (error.message.includes('Invalid login credentials') || error.message.includes('Email not confirmed'))) {
+          const autoConfirmRes = await fetch('/api/parent/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, fullName: email.split('@')[0] }),
+          });
+
+          if (autoConfirmRes.ok) {
+            const retryAuth = await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+            if (!retryAuth.error) {
+              error = null;
+            }
+          }
+        }
+
+        if (error) {
+          throw new Error('Неверный Email или пароль. Если вы регистрируетесь впервые, переключитесь на вкладку «Регистрация» ниже.');
+        }
 
         setSuccessMsg('Успешный вход! Переход в кабинет...');
         setTimeout(() => {
           window.location.href = '/my-dashboard';
-        }, 800);
+        }, 600);
       }
     } catch (err: any) {
       console.error('Auth error:', err);
