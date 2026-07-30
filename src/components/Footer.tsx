@@ -1,0 +1,50 @@
+'use client';
+
+import React from 'react';
+import { TEACHER_INFO } from '@/data/teacherInfo';
+import { Send, Phone, Heart } from 'lucide-react';
+
+export const Footer: React.FC = () => {
+  return (
+    <footer className="bg-[#1F1E1D] text-[#FAF8F5] py-12 border-t-4 border-[#C85A32] relative">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
+        
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center justify-between pb-8 border-b border-white/10">
+          
+          <div className="md:col-span-6 space-y-2">
+            <h3 className="font-serif font-bold text-2xl text-white">
+              {TEACHER_INFO.name}
+            </h3>
+            <p className="text-xs text-white/70 font-mono">
+              Подготовка к школе (5–7 лет) & Репетитор начальной школы (1–4 классы)
+            </p>
+          </div>
+
+          <div className="md:col-span-6 flex flex-wrap items-center md:justify-end gap-4">
+            <a
+              href="https://t.me/"
+              target="_blank"
+              rel="noreferrer"
+              className="bg-[#2E5A44] hover:bg-[#234634] text-white text-xs font-semibold px-4 py-2.5 rounded-lg border border-white/20 flex items-center gap-2 transition-all"
+            >
+              <Send className="w-4 h-4" />
+              <span>Написать в Telegram</span>
+            </a>
+          </div>
+
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/50 font-mono">
+          <div>
+            © 2026 {TEACHER_INFO.name}. Все права защищены.
+          </div>
+          <div className="flex items-center gap-1">
+            <span>С заботой о детях и результатах</span>
+            <Heart className="w-3.5 h-3.5 text-[#C85A32] fill-[#C85A32]" />
+          </div>
+        </div>
+
+      </div>
+    </footer>
+  );
+};

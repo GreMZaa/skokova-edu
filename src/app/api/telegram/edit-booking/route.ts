@@ -1,0 +1,65 @@
+import { NextResponse } from 'next/server';
+import { createAdminClient } from '@/lib/supabase/server';
+
+export async function POST(req: Request) {
+  try {
+    const { booking_id, new_slot_id, new_parent_name, new_phone, new_child_name, new_comment } = await req.json();
+
+    if (!booking_id) {
+      return NextResponse.json({ success: false, error: 'booking_id is required' }, { status: 400 });
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    const updates: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (new_slot_id) {
+      updates.slot_id = new_slot_id;
+      updates.status = 'rescheduled';
+    }
+    if (new_parent_name) updates.parent_name = new_parent_name;
+    if (new_phone) updates.phone = new_phone;
+    if (new_child_name) updates.child_name = new_child_name;
+    if (new_comment !== undefined) updates.comment = new_comment;
+
+    if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from('bookings')
+        .update(updates)
+        .eq('id', booking_id);
+
+      if (error) throw error;
+    }
+
+    // Оповещение педагога в Telegram об изменении
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const teacherChatId = process.env.TELEGRAM_TEACHER_CHAT_ID;
+
+    if (botToken && teacherChatId && !botToken.includes('123456789')) {
+      const updateMsg = `✏️ *ЗАЯВКА #${booking_id} ОБНОВЛЕНА ПЕДАГОГОМ*\n\n` +
+        `Изменения успешно внесены в систему.`;
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: teacherChatId,
+          text: updateMsg,
+          parse_mode: 'Markdown',
+        }),
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      booking_id,
+      message: 'Данные заявки успешно отредактированы',
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

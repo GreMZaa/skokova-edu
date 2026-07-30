@@ -1,26 +1,48 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg-main: #FAF8F5;
+    --card-bg: #FFFFFF;
+    --text-primary: #1F1E1D;
+    --text-secondary: #595652;
+    --accent-terracotta: #C85A32;
+    --accent-emerald: #2E5A44;
+    --border-dark: #1F1E1D;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #FAF8F5;
+  color: #1F1E1D;
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Anti-AI-Slop Hard Shadows & Floating UI */
+.hard-shadow {
+  box-shadow: 4px 4px 0px 0px #1F1E1D;
+}
+
+.hard-shadow-lg {
+  box-shadow: 6px 6px 0px 0px #1F1E1D;
+}
+
+.hard-shadow-accent {
+  box-shadow: 4px 4px 0px 0px #C85A32;
+}
+
+.floating-card {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.floating-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 6px 8px 0px 0px #1F1E1D;
+}
+
+/* Noise texture overlay for non-sterile organic feel */
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
 }

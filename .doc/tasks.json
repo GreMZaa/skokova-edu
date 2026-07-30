@@ -1,0 +1,213 @@
+{
+  "project_name": "TeacherBookingPlatform",
+  "version": "1.2",
+  "agent_instructions": {
+    "before_start": [
+      "Прочитай файл PRD-TeacherBooking-2026-07-30.md и роадмап.md",
+      "Выбери ОДНУ задачу со статусом pending и наивысшим приоритетом",
+      "Проверь, что все dependencies этой задачи имеют статус done"
+    ],
+    "during_work": [
+      "Работай только над выбранной задачей",
+      "Делай коммиты после каждого логического изменения",
+      "Не трогай код, не связанный с текущей задачей"
+    ],
+    "before_finish": [
+      "Выполни ВСЕ test_steps из задачи",
+      "Меняй status на done ТОЛЬКО после успешного прохождения всех тестов",
+      "ЗАПРЕЩЕНО удалять или редактировать задачи — только менять status"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "TASK-000",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Настройка MCP-серверов Context7, Design MCP и проверка глобальных скиллов",
+      "acceptance_criteria": [
+        "MCP-серверы Context7 и Design подключены",
+        "Скиллы Next.js, Supabase, Tailwind, Telegram Bot и UI доступны"
+      ],
+      "test_steps": [
+        "Шаг 1: Проверить доступность MCP-серверов в конфигурации",
+        "Шаг 2: Подтвердить готовность стека разработки"
+      ],
+      "dependencies": [],
+      "status": "done"
+    },
+    {
+      "id": "TASK-001",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Инициализация репозитория Next.js 14+ c TypeScript и Tailwind CSS",
+      "acceptance_criteria": [
+        "Проект Next.js с App Router создан",
+        "Настроены Tailwind CSS и основные UI-библиотеки"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить npm run dev",
+        "Шаг 2: Открыть локальную страницу в браузере",
+        "Шаг 3: Проверить сборку без ошибок"
+      ],
+      "dependencies": ["TASK-000"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-002",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Создание схем БД и бакета Storage в Supabase",
+      "acceptance_criteria": [
+        "Созданы таблицы time_slots и bookings",
+        "Создан бакет receipts в Supabase Storage",
+        "Настроены базовые RLS-политики"
+      ],
+      "test_steps": [
+        "Шаг 1: Проверить наличие таблиц через SQL Editor / Client",
+        "Шаг 2: Протестировать загрузку тестового файла в бакет receipts"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-003",
+      "category": "ui",
+      "priority": "high",
+      "description": "Верстка главного экрана и блоков презентации педагога",
+      "acceptance_criteria": [
+        "Готова секция Hero, 'Обо мне', направления 'Подготовка к школе' и '1-4 классы'",
+        "Дизайн адаптирован под мобильные устройства (Mobile-First)"
+      ],
+      "test_steps": [
+        "Шаг 1: Проверить отображение на экране смартфона",
+        "Шаг 2: Проверить кликабельность кнопки Записаться"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-004",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Интерактивный календарь свободного выбора слотов (Вариант Б)",
+      "acceptance_criteria": [
+        "Календарь отображает только свободные слоты из time_slots",
+        "При выборе происходит временно блокирование слота на 15 минут"
+      ],
+      "test_steps": [
+        "Шаг 1: Выбрать свободный слот на календаре",
+        "Шаг 2: Убедиться, что статус слота изменился на pending_payment"
+      ],
+      "dependencies": ["TASK-002", "TASK-003"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-005",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Форма записи: сбор данных о ребенке и родителе",
+      "acceptance_criteria": [
+        "Валидация телефона, Telegram, класса/возраста (5-7 лет, 1-4 класс)",
+        "Чекбокс согласия ФЗ-152"
+      ],
+      "test_steps": [
+        "Шаг 1: Заполнить форму с невалидными данными и проверить ошибки",
+        "Шаг 2: Отправить корректно заполненную форму"
+      ],
+      "dependencies": ["TASK-004"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-006",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Модуль реквизитов СБП и загрузчик файлов чеков",
+      "acceptance_criteria": [
+        "Выдача карты/СБП реквизитов",
+        "Загрузка файлов чека (JPG, PNG, PDF до 10МБ) в Supabase Storage"
+      ],
+      "test_steps": [
+        "Шаг 1: Прикрепить PDF/JPG чек",
+        "Шаг 2: Нажать 'Я оплатил(а)' и проверить загрузку файла в Supabase"
+      ],
+      "dependencies": ["TASK-002", "TASK-005"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-007",
+      "category": "integration",
+      "priority": "critical",
+      "description": "Telegram-бот: отправка карточки заявки с файлом чека маме",
+      "acceptance_criteria": [
+        "Бот мгновенно отправляет уведомление в Telegram мамы с прикрепленным файлом чека",
+        "Сообщение содержит кнопки Подтвердить, Изменить, Отклонить, Написать"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить заявку с сайта",
+        "Шаг 2: Проверить приход сообщения в Telegram мамы со сканом чека"
+      ],
+      "dependencies": ["TASK-006"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-008",
+      "category": "functional",
+      "priority": "high",
+      "description": "Модуль редактирования заявки из Telegram (перенос времени, правка данных)",
+      "acceptance_criteria": [
+        "Нажатие [Изменить заявку] позволяет перенести слот или изменить имя/телефон/комментарий"
+      ],
+      "test_steps": [
+        "Шаг 1: Нажать кнопке Изменить заявку в Telegram",
+        "Шаг 2: Поменять время слота и проверить обновление в БД"
+      ],
+      "dependencies": ["TASK-007"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-009",
+      "category": "integration",
+      "priority": "high",
+      "description": "Telegram WebApp (TWA) для выбора слотов внутри бота",
+      "acceptance_criteria": [
+        "Пользователи могут открыть приложение внутри Telegram в 1 клик"
+      ],
+      "test_steps": [
+        "Шаг 1: Нажать /start в Telegram боте",
+        "Шаг 2: Открыть WebApp и забронировать урок"
+      ],
+      "dependencies": ["TASK-008"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-010",
+      "category": "security",
+      "priority": "high",
+      "description": "Защита данных ФЗ-152 и закрытые RLS политики для чеков",
+      "acceptance_criteria": [
+        "Анонимные пользователи не имеют доступа к файлам чеков в Storage"
+      ],
+      "test_steps": [
+        "Шаг 1: Попробовать открыть прямой URL файла чека без прав админа",
+        "Шаг 2: Убедиться в получении ошибки 403 Forbidden"
+      ],
+      "dependencies": ["TASK-002", "TASK-006"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-011",
+      "category": "infrastructure",
+      "priority": "medium",
+      "description": "Финальное E2E тестирование и деплой на Vercel Production",
+      "acceptance_criteria": [
+        "Сайт и Бот работают без ошибок в продакшене Vercel"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить контрольную запись с реального смартфона",
+        "Шаг 2: Убедиться в успешном завершении цикла"
+      ],
+      "dependencies": ["TASK-007", "TASK-008", "TASK-010"],
+      "status": "pending"
+    }
+  ]
+}
