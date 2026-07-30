@@ -2,9 +2,18 @@
 
 import React from 'react';
 import { TEACHER_INFO } from '@/data/teacherInfo';
-import { Send, Phone, Heart } from 'lucide-react';
+import { Send, Heart } from 'lucide-react';
 
 export const Footer: React.FC = () => {
+  const handleTelegramClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // Пробуем открыть напрямую в установленном приложении Telegram (без блока .me)
+    try {
+      window.location.href = 'tg://resolve?phone=79608374706';
+    } catch (err) {
+      console.log('Native Telegram app link fallback');
+    }
+  };
+
   return (
     <footer className="bg-[#1F1E1D] text-[#FAF8F5] py-12 border-t-4 border-[#C85A32] relative">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
@@ -22,10 +31,11 @@ export const Footer: React.FC = () => {
 
           <div className="md:col-span-6 flex flex-wrap items-center md:justify-end gap-4">
             <a
-              href="https://t.me/"
+              href="https://web.telegram.org/k/#510510041"
               target="_blank"
               rel="noreferrer"
-              className="bg-[#2E5A44] hover:bg-[#234634] text-white text-xs font-semibold px-4 py-2.5 rounded-lg border border-white/20 flex items-center gap-2 transition-all"
+              onClick={handleTelegramClick}
+              className="bg-[#2E5A44] hover:bg-[#234634] text-white text-xs font-semibold px-4 py-2.5 rounded-lg border border-white/20 flex items-center gap-2 transition-all cursor-pointer hard-shadow"
             >
               <Send className="w-4 h-4" />
               <span>Написать в Telegram</span>
