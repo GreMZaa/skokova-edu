@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client';
 function LoginContent() {
   const searchParams = useSearchParams();
   const isResetModeParam = searchParams.get('reset') === 'true';
+  const codeParam = searchParams.get('code');
 
   const [isRegister, setIsRegister] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
@@ -24,11 +25,38 @@ function LoginContent() {
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    // Слушаем клик по ссылке сброса пароля из письма (когда в URL есть reset=true или type=recovery в хеше)
+    const supabase = createClient();
+
+    // 1. Подписываемся на события аутентификации Supabase
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (session && isResetModeParam)) {
+        setIsSetNewPasswordMode(true);
+        if (session?.user?.email) {
+          setEmail(session.user.email);
+        }
+      }
+    });
+
+    // 2. Если передан PKCE код ?code=...
+    if (codeParam) {
+      supabase.auth.exchangeCodeForSession(codeParam).then(({ data, error }) => {
+        if (!error && data.session) {
+          setIsSetNewPasswordMode(true);
+          if (data.session.user?.email) {
+            setEmail(data.session.user.email);
+          }
+        }
+      });
+    }
+
     if (isResetModeParam || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
       setIsSetNewPasswordMode(true);
     }
-  }, [isResetModeParam]);
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [isResetModeParam, codeParam]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,21 +75,56 @@ function LoginContent() {
       }
 
       setLoading(true);
+      const supabase = createClient();
+
       try {
-        const supabase = createClient();
-        const { error } = await supabase.auth.updateUser({
+        let isSuccess = false;
+
+        // Попытка 1: Клиентское обновление в текущей сессии
+        const { error: updateError } = await supabase.auth.updateUser({
           password: password,
         });
 
-        if (error) throw error;
+        if (!updateError) {
+          isSuccess = true;
+        } else {
+          console.warn('Client-side updateUser failed, trying server fallback:', updateError.message);
+          
+          // Попытка 2: Серверный фолбэк для мобильных встроенных браузеров (Mail.ru/Safari In-App Browser)
+          const fallbackEmail = email || (await supabase.auth.getUser()).data.user?.email;
+          if (fallbackEmail) {
+            const res = await fetch('/api/parent/reset-password', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: fallbackEmail, newPassword: password }),
+            });
 
-        setSuccessMsg('🎉 Новый пароль успешно сохранён! Выполняем вход в кабинет...');
-        setTimeout(() => {
-          window.location.href = '/my-dashboard';
-        }, 1000);
+            const data = await res.json();
+            if (data.success) {
+              isSuccess = true;
+            } else {
+              throw new Error(data.error || updateError.message);
+            }
+          } else {
+            throw updateError;
+          }
+        }
+
+        if (isSuccess) {
+          setSuccessMsg('🎉 Новый пароль успешно сохранён! Выполняем вход...');
+          
+          // Выполняем вход с новым паролем
+          if (email) {
+            await supabase.auth.signInWithPassword({ email, password });
+          }
+
+          setTimeout(() => {
+            window.location.href = '/my-dashboard';
+          }, 800);
+        }
       } catch (err: any) {
         console.error('Update password error:', err);
-        setErrorMsg(err.message || 'Ошибка обновления пароля');
+        setErrorMsg(err.message || 'Ошибка обновления пароля. Попробуйте еще раз.');
       } finally {
         setLoading(false);
       }
@@ -87,7 +150,7 @@ function LoginContent() {
         if (error) throw error;
 
         setSuccessMsg(
-          `✉️ Письмо со ссылкой для восстановления пароля отправлено на ваш Email (${email}). Пожалуйста, открывайте почту и перейдите по ссылке из письма!`
+          `✉️ Письмо со ссылкой для восстановления пароля отправлено на ваш Email (${email}). Пожалуйста, откройте почту и нажмите на ссылку из письма!`
         );
       } catch (err: any) {
         console.error('Reset password email error:', err);
@@ -233,6 +296,21 @@ function LoginContent() {
         {isSetNewPasswordMode ? (
           /* Форма установки нового пароля после клика по ссылке из письма */
           <>
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-[#C85A32]" />
+                <span>Электронная почта (Email) *</span>
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="name@domain.ru"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 bg-[#FAF8F5] text-sm text-[#1F1E1D] font-medium focus:border-[#1F1E1D] focus:outline-none font-mono"
+              />
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-xs font-mono font-bold uppercase text-[#595652] flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-[#C85A32]" />
