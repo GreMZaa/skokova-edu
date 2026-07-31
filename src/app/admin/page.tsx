@@ -781,15 +781,12 @@ export default function AdminPage() {
                     <div className="bg-[#FAF8F5] p-3 rounded-xl border border-[#1F1E1D]/10 space-y-1 text-xs">
                       <div>
                         <span className="font-bold text-[#595652]">Родитель: </span>
-                        <span className="text-[#1F1E1D] font-medium">
-                          {b.parent_name} ({b.phone})
-                        </span>
+                        <span className="text-[#1F1E1D] font-medium">{b.parent_name}</span>
+                        {b.phone && <span className="text-[#595652] ml-2">({b.phone})</span>}
                       </div>
                       <div>
                         <span className="font-bold text-[#595652]">Ребёнок: </span>
-                        <span className="text-[#1F1E1D] font-medium">
-                          {b.child_name || 'Не указан'} ({GRADE_LABELS[b.child_grade] || b.child_grade})
-                        </span>
+                        <span className="text-[#1F1E1D] font-medium">{b.child_name || 'Не указан'}</span>
                       </div>
                       {b.telegram_handle && (
                         <div>

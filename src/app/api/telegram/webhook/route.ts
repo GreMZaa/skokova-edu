@@ -37,6 +37,9 @@ const userSessions: Record<number, {
   step?: string;
   service_title?: string;
   price?: number;
+  slot_id?: string;
+  slot_time?: string;
+  parent_name?: string;
   child_name?: string;
   child_grade?: string;
   phone?: string;
@@ -89,14 +92,18 @@ export async function POST(req: Request) {
       const username = update.message.from?.username ? `@${update.message.from.username}` : '';
       const firstName = update.message.from?.first_name || 'Родитель';
 
-      // Ищем последнюю неоплаченную или ожидающую чек запись этого пользователя
-      let query = supabase.from('bookings').select('*').order('created_at', { ascending: false });
-      if (username) {
-        query = query.ilike('telegram_handle', username);
-      }
+      // Ищем последнюю неоплаченную запись для этого пользователя
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('status', 'pending_payment')
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-      const { data: bookings } = await query.limit(3);
-      const pendingBooking = bookings?.find((b: any) => b.status === 'pending_payment' || b.status === 'receipt_uploaded');
+      const pendingBooking = bookings?.find((b: any) => 
+        (username && b.telegram_handle && b.telegram_handle.toLowerCase() === username.toLowerCase()) ||
+        (b.parent_name && b.parent_name.toLowerCase() === firstName.toLowerCase())
+      ) || bookings?.[0];
 
       let photoFileId = '';
       if (update.message.photo && update.message.photo.length > 0) {
@@ -112,6 +119,7 @@ export async function POST(req: Request) {
           .update({
             status: 'receipt_uploaded',
             admin_notes: `Чек получен в Telegram (${new Date().toLocaleString('ru-RU')})`,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', pendingBooking.id);
 
@@ -119,7 +127,7 @@ export async function POST(req: Request) {
         const caption = `📑 *НОВЫЙ ЧЕК ОБ ОПЛАТЕ ЗАНЯТИЯ!*\n\n` +
           `👤 *Родитель:* ${pendingBooking.parent_name || firstName} (${username || 'без ника'})\n` +
           `📞 *Телефон:* \`${pendingBooking.phone || 'не указан'}\`\n` +
-          `👶 *Ученик:* ${pendingBooking.child_name} (${pendingBooking.child_grade})\n` +
+          `👶 *Ученик:* ${pendingBooking.child_name}\n` +
           `📚 *Услуга:* ${pendingBooking.service_title}\n` +
           `💰 *Сумма:* ${pendingBooking.price} ₽\n` +
           `🆔 *ID записи:* \`${pendingBooking.id}\``;
@@ -183,7 +191,7 @@ export async function POST(req: Request) {
       const userId = update.message.from?.id || chatId;
       const text = (update.message.text || '').trim();
       const username = update.message.from?.username ? `@${update.message.from.username}` : '';
-      const firstName = update.message.from?.first_name || 'Гость';
+      const firstName = update.message.from?.first_name || 'Родитель';
 
       const session = userSessions[userId] || {};
 
@@ -230,7 +238,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📅 Записаться на урок" -> Перевод меню на выбор тарифа
+      // Кнопка "📅 Записаться на урок" -> ШАГ 1: Перевод меню на выбор тарифа
       if (text.includes('Записаться') || text === '/book') {
         userSessions[userId] = { step: 'select_service' };
 
@@ -264,28 +272,84 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Выбор программы в нижнем меню -> Переход к ШАГУ 2 (Запрос Имени)
+      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия
       if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
         const isOffline = text.includes('Оффлайн');
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
 
         userSessions[userId] = {
-          step: 'awaiting_child_name',
+          step: 'select_slot_time',
           service_title: selectedTitle,
           price: selectedPrice,
         };
 
-        const namePromptMsg = `👍 Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n` +
-          `👶 *ШАГ 2: Укажите имя ребёнка*\n` +
-          `Напишите в сообщении ниже, как зовут ребёнка (например: \`Артём\`):`;
+        // Запрашиваем свободные слоты из базы данных Supabase
+        const { data: slots } = await supabase
+          .from('time_slots')
+          .select('*')
+          .eq('is_booked', false)
+          .gte('start_time', new Date().toISOString())
+          .order('start_time', { ascending: true })
+          .limit(4);
+
+        let timeButtons: any[][] = [];
+        let slotMsg = `⏰ *ШАГ 2: Выберите дату и время занятия*\n\n` +
+          `Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n`;
+
+        if (slots && slots.length > 0) {
+          slotMsg += `Доступные слоты на эту неделю:`;
+          slots.forEach((s: any) => {
+            const dateStr = new Date(s.start_time).toLocaleString('ru-RU', {
+              day: 'numeric',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'Europe/Samara',
+            });
+            timeButtons.push([{ text: `⏰ ${dateStr}` }]);
+          });
+        }
+
+        timeButtons.push([{ text: '⏰ Уточнить удобное время с педагогом' }]);
+        timeButtons.push([{ text: '⬅️ Назад в главное меню' }]);
+
+        const slotReplyKeyboard = {
+          keyboard: timeButtons,
+          resize_keyboard: true,
+        };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: namePromptMsg,
+            text: slotMsg,
+            parse_mode: 'Markdown',
+            reply_markup: slotReplyKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      // ШАГ 2 -> ШАГ 3: Запрос имени родителя
+      if (session.step === 'select_slot_time' || text.includes('⏰')) {
+        const slotChoice = text.startsWith('⏰') ? text.replace('⏰', '').trim() : 'Согласовать удобное время';
+        session.slot_time = slotChoice;
+        session.step = 'awaiting_parent_name';
+        userSessions[userId] = session;
+
+        const parentPromptMsg = `👍 Время: *${slotChoice}*\n\n` +
+          `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
+          `Напишите Ваше имя (например: \`${firstName}\`):`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: parentPromptMsg,
             parse_mode: 'Markdown',
             reply_markup: cancelKeyboard,
           }),
@@ -294,15 +358,39 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 2: Пользователь ввёл ИМЯ -> Переход к ШАГУ 3 (Запрос Возраста / Класса)
+      // ШАГ 3 -> ШАГ 4: Запрос имени ребёнка
+      if (session.step === 'awaiting_parent_name' && text) {
+        session.parent_name = text;
+        session.step = 'awaiting_child_name';
+        userSessions[userId] = session;
+
+        const childNamePromptMsg = `👍 Родитель: *${text}*\n\n` +
+          `👶 *ШАГ 4: Как зовут ребёнка?*\n` +
+          `Напишите только имя ребёнка (например: \`Артём\`):`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: childNamePromptMsg,
+            parse_mode: 'Markdown',
+            reply_markup: cancelKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      // ШАГ 4 -> ШАГ 5: Запрос возраста / класса ребёнка
       if (session.step === 'awaiting_child_name' && text) {
         session.child_name = text;
         session.step = 'awaiting_child_age_grade';
         userSessions[userId] = session;
 
-        const agePromptMsg = `👍 Имя ребёнка: *${text}*\n\n` +
-          `🎓 *ШАГ 3: Укажите возраст или класс ребёнка*\n` +
-          `Напишите в сообщении ниже (например: \`6 лет, Подготовка к школе\` или \`3 класс\`):`;
+        const agePromptMsg = `👍 Ребёнок: *${text}*\n\n` +
+          `🎓 *ШАГ 5: Укажите возраст или класс ребёнка*\n` +
+          `Напишите в сообщении (например: \`6 лет, Подготовка к школе\` или \`3 класс\`):`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -318,14 +406,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 3: Пользователь ввёл ВОЗРАСТ/КЛАСС -> Переход к ШАГУ 4 (Запрос Телефона)
+      // ШАГ 5 -> ШАГ 6: Запрос номера телефона
       if (session.step === 'awaiting_child_age_grade' && text) {
         session.child_grade = text;
         session.step = 'awaiting_phone';
         userSessions[userId] = session;
 
         const phonePromptMsg = `👍 Возраст / Класс: *${text}*\n\n` +
-          `📱 *ШАГ 4: Укажите Ваш контактный номер телефона*\n` +
+          `📱 *ШАГ 6: Укажите Ваш контактный номер телефона*\n` +
           `Нажмите кнопку *«📱 Отправить мой номер телефона»* внизу или введите номер вручную:`;
 
         const contactKb = {
@@ -350,11 +438,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 4: Пользователь передал номер (кнопкой контактов или текстом) -> СОХРАНЕНИЕ В SUPABASE
+      // ШАГ 6: Сохранение бронирования в Supabase DB
       if (session.step === 'awaiting_phone' || update.message.contact !== undefined) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
 
+        const parentNameOnly = session.parent_name || firstName;
+        const childNameOnly = session.child_name || 'Ученик';
         const rawGrade = session.child_grade || '';
         const mappedGrade = mapChildGradeToEnum(rawGrade);
 
@@ -364,12 +454,12 @@ export async function POST(req: Request) {
           .insert({
             service_title: session.service_title || SERVICES[0].title,
             price: session.price || SERVICES[0].price,
-            parent_name: firstName,
+            parent_name: parentNameOnly,
             phone: phone,
             telegram_handle: username,
-            child_name: session.child_name || 'Ученик',
+            child_name: childNameOnly,
             child_grade: mappedGrade,
-            comment: `Имя и класс от родителя: ${session.child_name || ''} (${rawGrade})`,
+            comment: `Время: ${session.slot_time || 'Уточнить'}. Возраст/Класс: ${rawGrade}`,
             status: 'pending_payment',
             admin_notes: `Запись создана через Telegram-бот (${new Date().toLocaleString('ru-RU')})`,
           })
@@ -382,7 +472,7 @@ export async function POST(req: Request) {
 
         delete userSessions[userId];
 
-        // Получаем реквизиты из базы данных Supabase (settings eq requisites)
+        // Получаем реквизиты из базы данных Supabase
         const reqs = await getRequisites(supabase);
 
         let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
@@ -394,7 +484,9 @@ export async function POST(req: Request) {
 
         const successMsg = `🎉 *УРОК УСПЕШНО ЗАБРОНИРОВАН!*\n\n` +
           `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
-          `👶 *Ученик:* ${session.child_name || 'Ученик'} (${session.child_grade || 'Подготовка к школе'})\n` +
+          `⏰ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
+          `👤 *Родитель:* ${parentNameOnly}\n` +
+          `👶 *Ученик:* ${childNameOnly} (${rawGrade})\n` +
           `📞 *Телефон:* ${phone}\n` +
           `💰 *К оплате:* *${session.price || SERVICES[0].price} ₽*\n\n` +
           `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n${payDetailsStr}\n\n` +
@@ -466,7 +558,7 @@ export async function POST(req: Request) {
               b.status === 'pending_payment' ? '⏳ Ожидает оплаты' :
               b.status === 'receipt_uploaded' ? '📑 Чек на проверке' : b.status;
             cabMsg += `*${i + 1}. ${b.service_title}*\n` +
-              `👶 Ученик: ${b.child_name} (${b.child_grade})\n` +
+              `👶 Ученик: ${b.child_name}\n` +
               `📌 Статус: *${statusStr}*\n` +
               `💰 Сумма: ${b.price} ₽\n\n`;
           });
