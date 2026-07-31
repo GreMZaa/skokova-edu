@@ -94,8 +94,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
               {/* Верхняя панель */}
               <div className="flex items-center justify-between border-b-2 border-[#1F1E1D]/10 pb-3.5 sm:pb-4 gap-3">
                 <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#FAF8F5] border-2 border-[#1F1E1D] flex items-center justify-center font-bold text-[#C85A32] text-lg sm:text-xl shrink-0">
-                    👩‍🏫
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#FAF8F5] border-2 border-[#1F1E1D] flex items-center justify-center shrink-0 overflow-hidden">
+                    <img src="/avatar.png" alt="Скокова Юлия Павловна" className="w-full h-full object-cover" />
                   </div>
                   <div className="min-w-0">
                     <h3 className="font-bold text-base sm:text-lg text-[#1F1E1D] leading-none truncate">

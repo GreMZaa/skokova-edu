@@ -410,12 +410,12 @@ export default function ParentDashboardPage() {
       <header className="border-b-2 border-[#1F1E1D]/10 bg-[#FAF8F5]/80 backdrop-blur-md sticky top-0 z-50 px-4 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-[#C85A32] flex items-center justify-center text-white font-mono font-bold text-sm hard-shadow">
-              СЮ
+            <div className="w-9 h-9 rounded-full border-2 border-[#1F1E1D] overflow-hidden hard-shadow shrink-0">
+              <img src="/avatar.png" alt="Скокова Юлия Павловна" className="w-full h-full object-cover" />
             </div>
             <div>
               <span className="font-serif font-bold text-base tracking-tight text-[#1F1E1D] block leading-none">
-                Уроки Скоковой Юлии
+                Скокова Юлия Павловна
               </span>
               <span className="text-[10px] font-mono text-[#595652]">Кабинет семьи</span>
             </div>

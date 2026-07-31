@@ -72,8 +72,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenBooking }) => {
           
           {/* Логотип / Имя педагога */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#C85A32] text-white flex items-center justify-center font-bold text-[#FAF8F5] text-xs sm:text-sm border-2 border-[#1F1E1D] hard-shadow shrink-0">
-              СЮ
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#C85A32] text-white flex items-center justify-center border-2 border-[#1F1E1D] hard-shadow shrink-0 overflow-hidden">
+              <img src="/avatar.png" alt="Скокова Юлия Павловна" className="w-full h-full object-cover" />
             </div>
             <div className="min-w-0">
               <h1 className="font-bold text-sm sm:text-lg tracking-tight text-[#1F1E1D] leading-tight truncate">

@@ -488,8 +488,8 @@ export default function AdminPage() {
       <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] flex items-center justify-center p-4">
         <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 sm:p-8 hard-shadow-lg w-full max-w-md space-y-6">
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-[#C85A32] rounded-full flex items-center justify-center text-white mx-auto hard-shadow font-mono font-bold text-lg border-2 border-[#1F1E1D]">
-              СЮ
+            <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-[#1F1E1D] mx-auto hard-shadow shrink-0">
+              <img src="/avatar.png" alt="Скокова Юлия Павловна" className="w-full h-full object-cover" />
             </div>
             <h1 className="font-serif font-bold text-2xl text-[#1F1E1D]">
               Панель преподавателя
@@ -596,8 +596,8 @@ export default function AdminPage() {
         <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 sm:p-7 hard-shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           {/* Заголовок и статус */}
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#C85A32] flex items-center justify-center text-white font-mono font-extrabold text-lg hard-shadow shrink-0 border-2 border-[#1F1E1D]">
-              СЮ
+            <div className="w-12 h-12 rounded-2xl border-2 border-[#1F1E1D] overflow-hidden hard-shadow shrink-0">
+              <img src="/avatar.png" alt="Скокова Юлия Павловна" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-0.5 flex-wrap">
