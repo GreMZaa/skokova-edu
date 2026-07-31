@@ -228,6 +228,27 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
   return { inline_keyboard, totalSlots: validSlots.length, currentPage, totalPages };
 }
 
+async function syncBotDescription(botToken: string) {
+  try {
+    const desc = 'Онлайн-школа и репетиторский центр Скоковой Юлии Павловны.\n\nПодготовка к школе (5–7 лет), математика, чтение, подготовка к 1–4 классам.\n\nЗапись на уроки, личный кабинет и консультации.';
+    const shortDesc = 'Официальный бот педагога Скоковой Юлии Павловны. Запись на уроки и личный кабинет.';
+
+    await fetch(`https://api.telegram.org/bot${botToken}/setMyDescription`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: desc }),
+    });
+
+    await fetch(`https://api.telegram.org/bot${botToken}/setMyShortDescription`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ short_description: shortDesc }),
+    });
+  } catch (e) {
+    // Silent ignore
+  }
+}
+
 // Временное хранилище шагов диалога (Session state for Telegram users)
 const userSessions: Record<number, {
   step?: string;
@@ -411,6 +432,9 @@ export async function POST(req: Request) {
       // Команда /start -> Сразу создаем Личный кабинет в Supabase
       if (text.startsWith('/start')) {
         delete userSessions[userId];
+
+        // Синхронизируем официальное описание бота в Telegram
+        syncBotDescription(botToken);
 
         // Автоматически создаем пользователя в Supabase Auth и таблицу profiles при первом входе /start
         await getOrCreateUserProfile(supabase, {
