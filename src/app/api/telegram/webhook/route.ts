@@ -535,8 +535,8 @@ async function renderServicesScreen(botToken: string, chatId: number, session: a
 
   const servicesInlineKb = {
     inline_keyboard: [
-      [{ text: '💻 Онлайн-занятие (Индивидуально) — 600 ₽', callback_data: 'service_online' }],
-      [{ text: '🏫 Оффлайн-занятие (В кабинете) — 800 ₽', callback_data: 'service_offline' }],
+      [{ text: '💻 Онлайн (Индивидуально) - 600 ₽', callback_data: 'service_online' }],
+      [{ text: '🏫 Оффлайн (В кабинете) - 800 ₽', callback_data: 'service_offline' }],
       [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
     ],
   };
