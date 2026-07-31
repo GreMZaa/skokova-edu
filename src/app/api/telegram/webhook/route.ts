@@ -35,15 +35,15 @@ export async function POST(req: Request) {
     const mainReplyKeyboard = {
       keyboard: [
         [
-          { text: '📅 1) Записаться на урок' },
-          { text: '👤 2) Мой кабинет' },
+          { text: '📅 Записаться на урок' },
+          { text: '👤 Мой кабинет' },
         ],
         [
-          { text: '📚 3) Программы и тарифы' },
-          { text: '💳 4) Реквизиты оплаты' },
+          { text: '📚 Программы и тарифы' },
+          { text: '💳 Реквизиты оплаты' },
         ],
         [
-          { text: '💬 5) Связаться с педагогом' },
+          { text: '💬 Связаться с педагогом' },
         ],
       ],
       resize_keyboard: true,
@@ -183,8 +183,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📅 1) Записаться на урок"
-      if (text.includes('1) Записаться') || text.includes('Записаться')) {
+      // Кнопка "📅 Записаться на урок"
+      if (text.includes('Записаться') || text === '/book') {
         userSessions[userId] = { step: 'awaiting_child_data' };
 
         let servicesMsg = `🎯 *ШАГ 1: ВЫБЕРИТЕ НАПРАВЛЕНИЕ ОБУЧЕНИЯ*\n\n`;
@@ -304,8 +304,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📚 3) Программы и тарифы"
-      if (text.includes('3) Программы') || text.includes('Программы') || text === '/programs') {
+      // Кнопка "📚 Программы и тарифы"
+      if (text.includes('Программы') || text === '/programs') {
         let programsMsg = `📚 *ПРОГРАММЫ ОНЛАЙН-ЗАНЯТИЙ И ТАРИФЫ*\n\n` +
           `*Юлия Павловна* — Эксперт по развитию и подготовке к школе с опытом более 30 лет.\n\n`;
 
@@ -339,8 +339,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "👤 2) Мой кабинет"
-      if (text.includes('2) Мой кабинет') || text.includes('Мой кабинет') || text === '/my') {
+      // Кнопка "👤 Мой кабинет"
+      if (text.includes('Мой кабинет') || text === '/my') {
         let query = supabase.from('bookings').select('*').order('created_at', { ascending: false });
 
         if (username) {
@@ -354,7 +354,7 @@ export async function POST(req: Request) {
 
         if (!bookings || bookings.length === 0) {
           cabMsg += `У вас пока нет активных записей.\n` +
-            `Нажмите кнопку *«📅 1) Записаться на урок»* в меню ниже для выбора времени!`;
+            `Нажмите кнопку *«📅 Записаться на урок»* в меню ниже для выбора времени!`;
         } else {
           cabMsg += `📋 *Ваши последние записи:*\n\n`;
           bookings.forEach((b: any, i: number) => {
@@ -389,8 +389,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "💳 4) Реквизиты оплаты"
-      if (text.includes('4) Реквизиты') || text.includes('Реквизиты') || text === '/payment') {
+      // Кнопка "💳 Реквизиты оплаты"
+      if (text.includes('Реквизиты') || text === '/payment') {
         const { data: settings } = await supabase.from('settings').select('*').limit(1);
         const set = settings && settings[0] ? settings[0] : null;
 
@@ -420,8 +420,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "💬 5) Связаться с педагогом"
-      if (text.includes('5) Связаться') || text.includes('Педагог') || text.includes('Связаться')) {
+      // Кнопка "💬 Связаться с педагогом"
+      if (text.includes('Педагог') || text.includes('Связаться')) {
         const contactMsg = `👩‍🏫 *СВЯЗЬ С ПЕДАГОГОМ*\n\n` +
           `*Скокова Юлия Павловна*\n` +
           `Эксперт по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
