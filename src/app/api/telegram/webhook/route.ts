@@ -45,7 +45,27 @@ export async function POST(req: Request) {
       if (text.startsWith('/start')) {
         const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
           `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов.\n\n` +
-          `Нажмите кнопку *«Записаться»* слева внизу для запуска Mini App или выберите раздел в меню ниже:`;
+          `Выберите нужный раздел ниже:`;
+
+        const startInlineKb = {
+          inline_keyboard: [
+            [
+              { text: '📅 1) Записаться', web_app: { url: twaUrl } },
+            ],
+            [
+              { text: '👤 2) Мой кабинет', web_app: { url: `${baseUrl}/my-dashboard` } },
+            ],
+            [
+              { text: '📚 3) Программы и тарифы', web_app: { url: `${baseUrl}/twa#programs` } },
+            ],
+            [
+              { text: '💳 4) Реквизиты оплаты', callback_data: 'payment_info' },
+            ],
+            [
+              { text: '💬 5) Связаться с педагогом', url: 'https://t.me/ssharonovv' },
+            ],
+          ],
+        };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -54,7 +74,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: welcomeText,
             parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
+            reply_markup: startInlineKb,
           }),
         });
 
@@ -217,6 +237,41 @@ export async function POST(req: Request) {
 
       const [action, bookingId] = callbackData.split('_');
       const supabase = createAdminClient();
+
+      if (callbackData === 'payment_info') {
+        const { data: settings } = await supabase.from('settings').select('*').limit(1);
+        const set = settings && settings[0] ? settings[0] : null;
+
+        const phone = set?.phone || '+7 (937) 214-42-05';
+        const cardNumber = set?.card_number || '2202 2024 1122 3344';
+        const bankName = set?.bank_name || 'Сбербанк / Т-Банк (СБП)';
+        const recipient = set?.recipient || 'Скокова Юлия Павловна';
+
+        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n` +
+          `📱 *Телефон СБП:* \`${phone}\`\n` +
+          `💳 *Карта:* \`${cardNumber}\`\n` +
+          `🏦 *Банк:* ${bankName}\n` +
+          `👤 *Получатель:* ${recipient}\n\n` +
+          `📌 После перевода загрузите чек через окно записи в Mini App или Кабинете родителя!`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id }),
+        });
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: payMsg,
+            parse_mode: 'Markdown',
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
 
       if (action === 'confirm') {
         await supabase
