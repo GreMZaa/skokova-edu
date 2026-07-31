@@ -205,17 +205,29 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
-// Удаление сообщения пользователя для поддержания чистоты (БЕЗ УДАЛЕНИЯ СООБЩЕНИЙ БОТА, чтобы в iOS Telegram не вылезала синяя кнопка Старт!)
-async function cleanupUserTextMessage(botToken: string, chatId: number, userMsgId?: number) {
-  if (!userMsgId) return;
-  try {
-    await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, message_id: userMsgId }),
-    });
-  } catch (e) {
-    // Silent ignore
+// Очистка старых сообщений диалога
+async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
+  const idsToDelete = new Set<number>();
+  if (session.last_message_ids && Array.isArray(session.last_message_ids)) {
+    session.last_message_ids.forEach((id: number) => idsToDelete.add(id));
+  }
+  if (extraMsgId) {
+    idsToDelete.add(extraMsgId);
+  }
+
+  session.last_message_ids = [];
+
+  for (const mid of Array.from(idsToDelete)) {
+    if (!mid) continue;
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: mid }),
+      });
+    } catch (e) {
+      // Silent ignore
+    }
   }
 }
 
@@ -745,7 +757,7 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
-      await cleanupUserTextMessage(botToken, chatId, userMsgId);
+      await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
       const { data: bookings } = await supabase
         .from('bookings')
@@ -843,7 +855,7 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
-      await cleanupUserTextMessage(botToken, chatId, userMsgId);
+      await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
       // Проверка команд встроенного меню
       const isMenuCommand = 
@@ -1427,19 +1439,22 @@ export async function POST(req: Request) {
       // -------------------------------------------------------------
       // ПОДТВЕРЖДЕНИЕ ИЛИ ОТМЕНА ПЕДАГОГОМ В ТЕЛЕГРАМ-ЧАТЕ
       // -------------------------------------------------------------
+      // -------------------------------------------------------------
+      // ПОДТВЕРЖДЕНИЕ ИЛИ ОТМЕНА ПЕДАГОГОМ В ТЕЛЕГРАМ-ЧАТЕ
+      // -------------------------------------------------------------
       if (callbackData.startsWith('confirm_')) {
         const bookingId = callbackData.replace('confirm_', '');
+
+        const { data: bookingObj } = await supabase
+          .from('bookings')
+          .select('*, time_slots!bookings_slot_id_fkey(start_time)')
+          .eq('id', bookingId)
+          .maybeSingle();
 
         await supabase
           .from('bookings')
           .update({ status: 'confirmed' })
           .eq('id', bookingId);
-
-        const { data: bookingObj } = await supabase
-          .from('bookings')
-          .select('slot_id')
-          .eq('id', bookingId)
-          .maybeSingle();
 
         if (bookingObj?.slot_id) {
           await supabase
@@ -1477,22 +1492,68 @@ export async function POST(req: Request) {
           });
         }
 
+        // УВЕДОМЛЯЕМ РОДИТЕЛЯ В ЕГО ЛИЧНЫЙ ТЕЛЕГРАМ-ЧАТ
+        if (bookingObj?.user_id) {
+          try {
+            const { data: parentUser } = await supabase.auth.admin.getUserById(bookingObj.user_id);
+            const parentTgId = parentUser?.user?.user_metadata?.telegram_id;
+
+            if (parentTgId) {
+              let slotTimeStr = 'Согласованное время';
+              if (bookingObj.time_slots?.start_time) {
+                slotTimeStr = new Date(bookingObj.time_slots.start_time).toLocaleString('ru-RU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: 'Europe/Samara',
+                });
+              } else if (bookingObj.comment && bookingObj.comment.includes('Время:')) {
+                const m = bookingObj.comment.match(/Время:\s*([^.]+)/);
+                if (m) slotTimeStr = m[1].trim();
+              }
+
+              const confirmNotifyParentText = `🎉 *ОПЛАТА И ЗАПИСЬ ПОДТВЕРЖДЕНЫ ПЕДАГОГОМ!*\n\n` +
+                `Скокова Юлия Павловна подтвердила зачисление оплаты за урок!\n\n` +
+                `📚 *Программа:* ${bookingObj.service_title}\n` +
+                `⏱ *Время:* ${slotTimeStr}\n` +
+                `👶 *Ученик:* ${bookingObj.child_name || 'Не указан'}\n` +
+                `💰 *Сумма:* ${bookingObj.price} ₽\n` +
+                `📌 *Статус:* ✅ Занятие подтверждено\n\n` +
+                `Юлия Павловна ждёт Вас на уроке! Вы можете отслеживать детали записи в разделе *«👤 Мой кабинет»*.`;
+
+              let parentSession = parentUser?.user?.user_metadata?.telegram_session || {};
+              await cleanupPreviousMessages(botToken, Number(parentTgId), parentSession);
+
+              await sendAndTrackMessage(botToken, Number(parentTgId), {
+                text: confirmNotifyParentText,
+                parse_mode: 'Markdown',
+                reply_markup: mainInlineKeyboard,
+              }, parentSession);
+
+              await setUserSession(supabase, bookingObj.user_id, parentSession);
+            }
+          } catch (e) {
+            console.error('Error notifying parent on confirmation:', e);
+          }
+        }
+
         return NextResponse.json({ success: true });
       }
 
       if (callbackData.startsWith('reject_')) {
         const bookingId = callbackData.replace('reject_', '');
 
+        const { data: bookingObj } = await supabase
+          .from('bookings')
+          .select('*, time_slots!bookings_slot_id_fkey(start_time)')
+          .eq('id', bookingId)
+          .maybeSingle();
+
         await supabase
           .from('bookings')
           .update({ status: 'cancelled' })
           .eq('id', bookingId);
-
-        const { data: bookingObj } = await supabase
-          .from('bookings')
-          .select('slot_id')
-          .eq('id', bookingId)
-          .maybeSingle();
 
         if (bookingObj?.slot_id) {
           await supabase
@@ -1528,6 +1589,33 @@ export async function POST(req: Request) {
               reply_markup: { inline_keyboard: [] },
             }),
           });
+        }
+
+        // УВЕДОМЛЯЕМ РОДИТЕЛЯ В ЕГО ЛИЧНЫЙ ТЕЛЕГРАМ-ЧАТ
+        if (bookingObj?.user_id) {
+          try {
+            const { data: parentUser } = await supabase.auth.admin.getUserById(bookingObj.user_id);
+            const parentTgId = parentUser?.user?.user_metadata?.telegram_id;
+
+            if (parentTgId) {
+              const rejectNotifyParentText = `⚠️ *ОПЛАТА ИЛИ ЗАПИСЬ ОТКЛОНЕНЫ*\n\n` +
+                `К сожалению, оплата по Вашей записи не была подтверждена.\n` +
+                `Вы можете связаться с Юлией Павловной в разделе *«💬 Связаться с педагогом»* для уточнения деталей.`;
+
+              let parentSession = parentUser?.user?.user_metadata?.telegram_session || {};
+              await cleanupPreviousMessages(botToken, Number(parentTgId), parentSession);
+
+              await sendAndTrackMessage(botToken, Number(parentTgId), {
+                text: rejectNotifyParentText,
+                parse_mode: 'Markdown',
+                reply_markup: mainInlineKeyboard,
+              }, parentSession);
+
+              await setUserSession(supabase, bookingObj.user_id, parentSession);
+            }
+          } catch (e) {
+            console.error('Error notifying parent on rejection:', e);
+          }
         }
 
         return NextResponse.json({ success: true });
