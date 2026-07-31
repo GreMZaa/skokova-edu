@@ -295,6 +295,19 @@ async function editOrSendMessage(
 async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
   const nowIso = new Date().toISOString();
 
+  // 1. Получаем список забронированных slot_id из активных заявок (status != 'cancelled')
+  const { data: activeBookings } = await supabase
+    .from('bookings')
+    .select('slot_id')
+    .neq('status', 'cancelled');
+
+  const bookedSlotIds = new Set(
+    (activeBookings || [])
+      .map((b: any) => b.slot_id)
+      .filter(Boolean)
+  );
+
+  // 2. Выборка свободных слотов из time_slots
   const { data: slots } = await supabase
     .from('time_slots')
     .select('*')
@@ -302,7 +315,34 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
     .gte('start_time', nowIso)
     .order('start_time', { ascending: true });
 
-  const validSlots = slots || [];
+  const validSlots: { id: string; dateStr: string }[] = [];
+  const seenDateTimes = new Set<string>();
+
+  for (const s of (slots || [])) {
+    // Исключаем слоты, которые уже забронированы в таблице bookings
+    if (bookedSlotIds.has(s.id)) continue;
+
+    // Исключаем блокировки 15 минут
+    if (s.locked_until && new Date(s.locked_until).getTime() > Date.now()) {
+      continue;
+    }
+
+    const d = new Date(s.start_time);
+    const dateStr = d.toLocaleString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Samara',
+    });
+
+    // Убираем дубликаты одинакового времени
+    if (seenDateTimes.has(dateStr)) continue;
+    seenDateTimes.add(dateStr);
+
+    validSlots.push({ id: s.id, dateStr });
+  }
+
   const pageSize = 6;
   const totalPages = Math.ceil(validSlots.length / pageSize) || 1;
   const currentPage = Math.max(0, Math.min(page, totalPages - 1));
@@ -315,29 +355,15 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
     const row: any[] = [];
 
     const slot1 = pageSlots[i];
-    const dateStr1 = new Date(slot1.start_time).toLocaleString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Europe/Samara',
-    });
     row.push({
-      text: `🗓 ${dateStr1}`,
+      text: `🗓 ${slot1.dateStr}`,
       callback_data: `slot_${slot1.id}`,
     });
 
     if (i + 1 < pageSlots.length) {
       const slot2 = pageSlots[i + 1];
-      const dateStr2 = new Date(slot2.start_time).toLocaleString('ru-RU', {
-        day: 'numeric',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Europe/Samara',
-      });
       row.push({
-        text: `🗓 ${dateStr2}`,
+        text: `🗓 ${slot2.dateStr}`,
         callback_data: `slot_${slot2.id}`,
       });
     }
@@ -632,6 +658,14 @@ async function finalizeBooking(
 
   if (dbError) {
     console.error('Supabase booking insert error:', dbError);
+  }
+
+  // Помечаем слот как забронированный в time_slots
+  if (session.slot_id) {
+    await supabase
+      .from('time_slots')
+      .update({ is_booked: true, locked_until: null })
+      .eq('id', session.slot_id);
   }
 
   // Мгновенное уведомление педагогу

@@ -65,12 +65,11 @@ export async function POST(req: Request) {
       if (bookingError) throw bookingError;
       if (bookingData) booking_id = bookingData.id;
 
-      // 2. Блокируем время слота на 15 минут в time_slots
+      // 2. Помечаем время слота как забронированное в time_slots
       if (slot_id) {
-        const lockUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
         await supabase
           .from('time_slots')
-          .update({ locked_until: lockUntil })
+          .update({ is_booked: true, locked_until: null })
           .eq('id', slot_id);
       }
 
