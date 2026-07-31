@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 const sanitizeEnv = (val?: string) => (val || '').replace(/["'\r\n]/g, '').trim();
 
 export async function POST(req: Request) {
