@@ -563,32 +563,103 @@ export async function POST(req: Request) {
 
       // Кнопка "👤 Мой кабинет"
       if (text.includes('Мой кабинет') || text === '/my') {
-        let query = supabase.from('bookings').select('*').order('created_at', { ascending: false });
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', parentUserId)
+          .maybeSingle();
+
+        const { data: childrenList } = await supabase
+          .from('children')
+          .select('*')
+          .eq('parent_id', parentUserId);
+
+        let bookingsQuery = supabase
+          .from('bookings')
+          .select('*')
+          .order('created_at', { ascending: false });
 
         if (username) {
-          query = query.ilike('telegram_handle', username);
-        }
-
-        const { data: bookings } = await query.limit(5);
-
-        let cabMsg = `👤 *ЛИЧНЫЙ КАБИНЕТ РОДИТЕЛЯ*\n` +
-          `Telegram: ${username || firstName}\n\n`;
-
-        if (!bookings || bookings.length === 0) {
-          cabMsg += `У вас пока нет активных записей.\n` +
-            `Нажмите кнопку *«📅 Записаться на урок»* в меню ниже для выбора времени!`;
+          bookingsQuery = bookingsQuery.or(`user_id.eq.${parentUserId},telegram_handle.ilike.${username}`);
         } else {
-          cabMsg += `📋 *Ваши последние записи:*\n\n`;
-          bookings.forEach((b: any, i: number) => {
-            const statusStr = b.status === 'confirmed' ? '✅ Подтверждена' :
-              b.status === 'pending_payment' ? '⏳ Ожидает оплаты' :
-              b.status === 'receipt_uploaded' ? '📑 Чек на проверке' : b.status;
-            cabMsg += `*${i + 1}. ${b.service_title}*\n` +
-              `👶 Ученик: ${b.child_name}\n` +
-              `📌 Статус: *${statusStr}*\n` +
-              `💰 Сумма: ${b.price} ₽\n\n`;
-          });
+          bookingsQuery = bookingsQuery.eq('user_id', parentUserId);
         }
+
+        const { data: userBookings } = await bookingsQuery.limit(5);
+
+        const parentName = profile?.full_name || firstName;
+        const parentPhone = profile?.phone && !profile.phone.includes('Педагог') ? profile.phone : 'не указан';
+
+        let cabMsg = `👤 *ЛИЧНЫЙ КАБИНЕТ РОДИТЕЛЯ*\n\n` +
+          `📌 *Данные профиля:*\n` +
+          `• *Родитель:* ${parentName}\n` +
+          `• *Телефон:* \`${parentPhone}\`\n` +
+          `• *Telegram:* ${username || firstName}\n`;
+
+        if (childrenList && childrenList.length > 0) {
+          const kidsStr = childrenList.map((c: any) => c.name).join(', ');
+          cabMsg += `• *Ученики:* ${kidsStr}\n`;
+        }
+
+        const allBookings = userBookings || [];
+        const pendingCount = allBookings.filter((b: any) => b.status === 'pending_payment').length;
+        const confirmedCount = allBookings.filter((b: any) => b.status === 'confirmed').length;
+
+        cabMsg += `\n📊 *Статистика записей:*\n` +
+          `• Всего записей: *${allBookings.length}*\n` +
+          `• Ожидают оплаты: *${pendingCount}*\n` +
+          `• Подтверждено: *${confirmedCount}*\n\n`;
+
+        if (allBookings.length === 0) {
+          cabMsg += `⚠️ *У Вас пока нет активных записей на уроки.*\n` +
+            `Нажмите кнопку *«📅 Записаться на урок»* ниже, чтобы выбрать удобный день и время!`;
+        } else {
+          cabMsg += `📋 *Ваши последние занятия:*\n\n`;
+          for (let i = 0; i < allBookings.length; i++) {
+            const b = allBookings[i];
+            let statusBadge = '⏳ Ожидает оплаты';
+            if (b.status === 'confirmed') statusBadge = '✅ Урок подтверждён';
+            else if (b.status === 'receipt_uploaded') statusBadge = '📑 Чек на проверке';
+            else if (b.status === 'completed') statusBadge = '🎉 Урок проведён';
+            else if (b.status === 'cancelled') statusBadge = '❌ Отменено';
+
+            // Извлекаем время занятия из слота или комментария
+            let timeInfo = 'Время согласуется';
+            if (b.slot_id) {
+              const { data: slot } = await supabase
+                .from('time_slots')
+                .select('start_time')
+                .eq('id', b.slot_id)
+                .maybeSingle();
+              if (slot) {
+                timeInfo = new Date(slot.start_time).toLocaleString('ru-RU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: 'Europe/Samara',
+                });
+              }
+            } else if (b.comment && b.comment.includes('Время:')) {
+              const match = b.comment.match(/Время:\s*([^.]+)/);
+              if (match) timeInfo = match[1].trim();
+            }
+
+            cabMsg += `*${i + 1}. ${b.service_title}*\n` +
+              `🗓 Время: *${timeInfo}*\n` +
+              `👶 Ученик: *${b.child_name || 'Не указан'}*\n` +
+              `💰 Стоимость: *${b.price} ₽*\n` +
+              `📌 Статус: *${statusBadge}*\n\n`;
+          }
+        }
+
+        const cabinetInlineKb = {
+          inline_keyboard: [
+            [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+            [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
+            [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
+          ],
+        };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -597,7 +668,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: cabMsg,
             parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
+            reply_markup: cabinetInlineKb,
           }),
         });
 
@@ -943,6 +1014,34 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
+
+      // Клик по вызову реквизитов из кабинета
+      if (callbackData === 'show_requisites') {
+        const reqs = await getRequisites(supabase);
+
+        let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
+        if (reqs.cardNumber) {
+          payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
+        }
+        payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
+          `👤 *Получатель:* ${reqs.recipient}`;
+
+        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
+          `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: payMsg,
+            parse_mode: 'Markdown',
+            reply_markup: yuliaContactInlineKb,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
 
       // Клик по выбору тарифа/программы (Инлайн-кнопки)
       if (callbackData.startsWith('service_')) {
