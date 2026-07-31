@@ -17,6 +17,16 @@ function mapChildGradeToEnum(rawText: string): 'preschool_5' | 'preschool_6' | '
   return 'preschool_6';
 }
 
+function formatGradeDisplay(grade: string): string {
+  if (grade === 'grade_1') return '1 класс';
+  if (grade === 'grade_2') return '2 класс';
+  if (grade === 'grade_3') return '3 класс';
+  if (grade === 'grade_4') return '4 класс';
+  if (grade === 'preschool_5') return '5 лет (Подготовка)';
+  if (grade === 'preschool_6') return '6 лет (Подготовка)';
+  return grade || 'Подготовка к школе';
+}
+
 async function getRequisites(supabase: any) {
   const { data: dbSettings } = await supabase
     .from('settings')
@@ -49,7 +59,7 @@ async function getOrCreateUserProfile(
   const email = `tg_${telegramId}@skokova-edu.ru`;
   const password = `Tg_${telegramId}!`;
 
-  // 1. Поиск по telegram_handle в существующих профилях
+  // 1. Поиск по telegram_handle
   if (username) {
     const handleWithoutAt = username.replace('@', '').toLowerCase();
     const { data: allProfiles } = await supabase.from('profiles').select('*');
@@ -195,24 +205,17 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
-// Очистка старых сообщений диалога
-async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
-  const idsToDelete = [...(session.last_message_ids || [])];
-  if (extraMsgId) idsToDelete.push(extraMsgId);
-
-  session.last_message_ids = [];
-
-  for (const mid of idsToDelete) {
-    if (!mid) continue;
-    try {
-      await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, message_id: mid }),
-      });
-    } catch (e) {
-      // Silent ignore
-    }
+// Удаление сообщения пользователя для поддержания чистоты (БЕЗ УДАЛЕНИЯ СООБЩЕНИЙ БОТА, чтобы в iOS Telegram не вылезала синяя кнопка Старт!)
+async function cleanupUserTextMessage(botToken: string, chatId: number, userMsgId?: number) {
+  if (!userMsgId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: userMsgId }),
+    });
+  } catch (e) {
+    // Silent ignore
   }
 }
 
@@ -242,7 +245,7 @@ async function sendAndTrackMessage(
   return json;
 }
 
-// Редактирование существующего сообщения на месте (и отслеживание его ID в сессии)
+// Редактирование существующего сообщения на месте (0ms миганий, 100% стабильно на iOS)
 async function editOrSendMessage(
   botToken: string,
   chatId: number,
@@ -452,7 +455,7 @@ async function renderPersonalCabinetScreen(
     `• *Telegram:* ${username || firstName}\n`;
 
   if (childrenList && childrenList.length > 0) {
-    const kidsStr = childrenList.map((c: any) => c.name).join(', ');
+    const kidsStr = childrenList.map((c: any) => `${c.name} (${formatGradeDisplay(c.grade)})`).join(', ');
     cabMsg += `• *Ученики:* ${kidsStr}\n`;
   }
 
@@ -469,6 +472,7 @@ async function renderPersonalCabinetScreen(
   const cabinetInlineKb = {
     inline_keyboard: [
       [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+      [{ text: '👶 Мои дети (управление)', callback_data: 'menu_children' }],
       [{ text: '📋 История заказов', callback_data: 'show_history' }],
       [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
       [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
@@ -477,6 +481,42 @@ async function renderPersonalCabinetScreen(
   };
 
   await editOrSendMessage(botToken, chatId, messageId, cabMsg, cabinetInlineKb, session);
+}
+
+// -------------------------------------------------------------
+// РАЗДЕЛ "👶 МОИ ДЕТИ (УПРАВЛЕНИЕ УЧЕНИКАМИ)"
+// -------------------------------------------------------------
+async function renderChildrenScreen(
+  botToken: string,
+  chatId: number,
+  parentUserId: string,
+  supabase: any,
+  session: any,
+  messageId?: number
+) {
+  const { data: childrenList } = await supabase
+    .from('children')
+    .select('*')
+    .eq('parent_id', parentUserId);
+
+  let msg = `👶 *УПРАВЛЕНИЕ УЧЕНИКАМИ (МОИ ДЕТИ)*\n\n`;
+
+  if (!childrenList || childrenList.length === 0) {
+    msg += `⚠️ *У Вас пока нет добавленных детей в профиле.*\n` +
+      `Нажмите кнопку *«➕ Добавить ребёнка»* ниже, чтобы внести данные ученика.`;
+  } else {
+    msg += `📋 *Ваши дети:*\n\n`;
+    childrenList.forEach((c: any, i: number) => {
+      msg += `*${i + 1}. ${c.name}*\n` +
+        `🎓 Возраст / Класс: *${formatGradeDisplay(c.grade)}*\n\n`;
+    });
+  }
+
+  const inline_keyboard: any[][] = [];
+  inline_keyboard.push([{ text: '➕ Добавить ребёнка', callback_data: 'add_child_start' }]);
+  inline_keyboard.push([{ text: '⬅️ Назад в Кабинет', callback_data: 'menu_my' }]);
+
+  await editOrSendMessage(botToken, chatId, messageId, msg, { inline_keyboard }, session);
 }
 
 async function renderProgramsScreen(botToken: string, chatId: number, session: any, messageId?: number) {
@@ -529,6 +569,121 @@ async function renderContactScreen(botToken: string, chatId: number, session: an
   await editOrSendMessage(botToken, chatId, messageId, contactMsg, yuliaContactInlineKb, session, true);
 }
 
+// Вспомогательная функция завершения бронирования и отправки уведомления педагогу
+async function finalizeBooking(
+  botToken: string,
+  chatId: number,
+  teacherChatId: string,
+  supabase: any,
+  parentUserId: string,
+  session: any,
+  phone: string,
+  firstName: string,
+  username: string
+) {
+  const parentNameOnly = session.parent_name || firstName;
+  const childNameOnly = session.child_name || 'Ученик';
+  const rawGrade = session.child_grade || '';
+  const mappedGrade = mapChildGradeToEnum(rawGrade);
+
+  await getOrCreateUserProfile(supabase, {
+    telegramId: chatId,
+    firstName: firstName,
+    username: username,
+    phone: phone,
+    fullName: parentNameOnly,
+  });
+
+  if (childNameOnly && parentUserId) {
+    const { data: existingChild } = await supabase
+      .from('children')
+      .select('id')
+      .eq('parent_id', parentUserId)
+      .ilike('name', childNameOnly)
+      .maybeSingle();
+
+    if (!existingChild) {
+      await supabase.from('children').insert({
+        parent_id: parentUserId,
+        name: childNameOnly,
+        grade: mappedGrade,
+      });
+    }
+  }
+
+  const { data: newBooking, error: dbError } = await supabase
+    .from('bookings')
+    .insert({
+      user_id: parentUserId,
+      slot_id: session.slot_id || null,
+      service_title: session.service_title || SERVICES[0].title,
+      price: session.price || SERVICES[0].price,
+      parent_name: parentNameOnly,
+      phone: phone,
+      telegram_handle: username,
+      child_name: childNameOnly,
+      child_grade: mappedGrade,
+      comment: `Время: ${session.slot_time || 'Уточнить'}. Возраст/Класс: ${rawGrade}`,
+      status: 'pending_payment',
+      admin_notes: `Запись создана через Telegram-бот (${new Date().toLocaleString('ru-RU')})`,
+    })
+    .select()
+    .single();
+
+  if (dbError) {
+    console.error('Supabase booking insert error:', dbError);
+  }
+
+  // Мгновенное уведомление педагогу
+  const teacherNotification = `📌 *НОВАЯ ЗАЯВКА НА УРОК ИЗ TELEGRAM-БОТА!*\n\n` +
+    `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
+    `⏱ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
+    `👤 *Родитель:* ${parentNameOnly} (${username || 'без ника'})\n` +
+    `📞 *Телефон:* \`${phone}\`\n` +
+    `👶 *Ученик:* ${childNameOnly} (${rawGrade})\n` +
+    `💰 *Стоимость:* ${session.price || SERVICES[0].price} ₽\n` +
+    `📌 *Статус:* ⏳ Ожидает оплаты чека\n` +
+    `🆔 *ID записи:* \`${newBooking?.id || ''}\``;
+
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: teacherChatId,
+      text: teacherNotification,
+      parse_mode: 'Markdown',
+    }),
+  });
+
+  const reqs = await getRequisites(supabase);
+
+  let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
+  if (reqs.cardNumber) {
+    payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
+  }
+  payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
+    `👤 *Получатель:* ${reqs.recipient}`;
+
+  const successMsg = `🎉 *УРОК УСПЕШНО ЗАБРОНИРОВАН!*\n\n` +
+    `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
+    `⏰ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
+    `👤 *Родитель:* ${parentNameOnly}\n` +
+    `👶 *Ученик:* ${childNameOnly} (${formatGradeDisplay(mappedGrade)})\n` +
+    `📞 *Телефон:* ${phone}\n` +
+    `💰 *К оплате:* *${session.price || SERVICES[0].price} ₽*\n\n` +
+    `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n${payDetailsStr}\n\n` +
+    `📸 *Отправьте фото/скриншот чека прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
+
+  await sendAndTrackMessage(botToken, chatId, {
+    text: successMsg,
+    parse_mode: 'Markdown',
+    reply_markup: yuliaContactInlineKb,
+  }, session);
+
+  session.step = undefined;
+  await setUserSession(supabase, parentUserId, session);
+}
+
 export async function POST(req: Request) {
   try {
     const update = await req.json();
@@ -556,7 +711,7 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
-      await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
+      await cleanupUserTextMessage(botToken, chatId, userMsgId);
 
       const { data: bookings } = await supabase
         .from('bookings')
@@ -654,9 +809,7 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
-
-      // Удаляем сообщение пользователя и старый экран
-      await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
+      await cleanupUserTextMessage(botToken, chatId, userMsgId);
 
       // Проверка команд встроенного меню
       const isMenuCommand = 
@@ -681,30 +834,44 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Мой кабинет
-      if (text.includes('Мой кабинет') || text === '/my') {
-        await renderPersonalCabinetScreen(botToken, chatId, parentUserId, firstName, username, supabase, session);
+      // Добавление имени ребёнка через личный кабинет
+      if (session.step === 'adding_child_name' && text) {
+        session.new_child_name = text;
+        session.step = 'adding_child_grade';
+
+        const gradePromptMsg = `👍 Имя ребёнка: *${text}*\n\n` +
+          `🎓 *Укажите возраст или класс ребёнка*\n` +
+          `Напишите в сообщении (например: \`6 лет, Подготовка\` или \`2 класс\`):`;
+
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в кабинет', callback_data: 'menu_my' }]],
+        };
+
+        await sendAndTrackMessage(botToken, chatId, {
+          text: gradePromptMsg,
+          parse_mode: 'Markdown',
+          reply_markup: cancelInlineKb,
+        }, session);
+
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Программы и тарифы
-      if (text.includes('Программы') || text === '/programs') {
-        await renderProgramsScreen(botToken, chatId, session);
-        await setUserSession(supabase, parentUserId, session);
-        return NextResponse.json({ success: true });
-      }
+      // Добавление класса ребёнка через личный кабинет
+      if (session.step === 'adding_child_grade' && text) {
+        const childName = session.new_child_name || 'Ученик';
+        const mappedGrade = mapChildGradeToEnum(text);
 
-      // Реквизиты
-      if (text.includes('Реквизиты') || text === '/payment') {
-        await renderRequisitesScreen(botToken, chatId, supabase, session);
-        await setUserSession(supabase, parentUserId, session);
-        return NextResponse.json({ success: true });
-      }
+        await supabase.from('children').insert({
+          parent_id: parentUserId,
+          name: childName,
+          grade: mappedGrade,
+        });
 
-      // Связаться с педагогом
-      if (text.includes('Педагог') || text.includes('Связаться')) {
-        await renderContactScreen(botToken, chatId, session);
+        session.step = undefined;
+        session.new_child_name = undefined;
+
+        await renderChildrenScreen(botToken, chatId, parentUserId, supabase, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -712,37 +879,6 @@ export async function POST(req: Request) {
       // -------------------------------------------------------------
       // ПОШАГОВЫЙ ДИАЛОГ ЗАПИСИ НА УРОК (Ввод текста пользователем)
       // -------------------------------------------------------------
-
-      // ШАГ 1 -> ШАГ 2: Выбор программы по тексту
-      if (session.step === 'select_service' || text.includes('Записаться') || text === '/book') {
-        const isOffline = text.includes('Оффлайн');
-        const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
-        const selectedPrice = isOffline ? 800 : 600;
-
-        session.step = 'select_slot_time';
-        session.service_title = selectedTitle;
-        session.price = selectedPrice;
-
-        const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
-
-        let slotMsg = `🎯 *ВЫБРАНО:* ${selectedTitle} (${selectedPrice} ₽)\n\n` +
-          `⏰ *ШАГ 2: ВЫБЕРИТЕ ДАТУ И ВРЕМЯ ЗАНЯТИЯ*\n\n`;
-
-        if (totalSlots === 0) {
-          slotMsg += `⚠️ На ближайшие дни пока нет свободных слотов в расписании. Попробуйте записаться позже!`;
-        } else {
-          slotMsg += `Выберите свободный день и время на интерактивной клавиатуре ниже:`;
-        }
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: slotMsg,
-          parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard },
-        }, session);
-
-        await setUserSession(supabase, parentUserId, session);
-        return NextResponse.json({ success: true });
-      }
 
       // ШАГ 2 -> ШАГ 3: Время введено текстом
       if (session.step === 'select_slot_time' && text) {
@@ -774,7 +910,7 @@ export async function POST(req: Request) {
 
         const childNamePromptMsg = `👍 Родитель: *${text}*\n\n` +
           `👶 *ШАГ 4: Как зовут ребёнка?*\n` +
-          `Напишите только имя ребёнка (например: \`Артём\`):`;
+          `Напишите имя ребёнка (например: \`Артём\`):`;
 
         const cancelInlineKb = {
           inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
@@ -797,7 +933,7 @@ export async function POST(req: Request) {
 
         const agePromptMsg = `👍 Ребёнок: *${text}*\n\n` +
           `🎓 *ШАГ 5: Укажите возраст или класс ребёнка*\n` +
-          `Напишите в сообщении (например: \`6 лет, Подготовка к школе\` или \`3 класс\`):`;
+          `Напишите в сообщении (например: \`6 лет, Подготовка\` или \`3 класс\`):`;
 
         const cancelInlineKb = {
           inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
@@ -816,6 +952,21 @@ export async function POST(req: Request) {
       // ШАГ 5 -> ШАГ 6: Возраст -> Телефон
       if (session.step === 'awaiting_child_age_grade' && text) {
         session.child_grade = text;
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', parentUserId)
+          .maybeSingle();
+
+        const rawPhone = profile?.phone || '';
+        const parentPhone = (rawPhone && rawPhone.replace(/\D/g, '').length >= 6) ? rawPhone : '';
+
+        if (parentPhone) {
+          await finalizeBooking(botToken, chatId, teacherChatId, supabase, parentUserId, session, parentPhone, firstName, username);
+          return NextResponse.json({ success: true });
+        }
+
         session.step = 'awaiting_phone';
 
         const phonePromptMsg = `👍 Возраст / Класс: *${text}*\n\n` +
@@ -840,112 +991,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 6: Телефон получен -> Создание записи в БД + МГНОВЕННОЕ УВЕДОМЛЕНИЕ ПЕДАГОГУ КАК НА САЙТЕ
+      // ШАГ 6: Телефон получен -> Завершение бронирования
       if (session.step === 'awaiting_phone' || update.message.contact !== undefined) {
         const phone = update.message.contact?.phone_number || text;
-        session.phone = phone;
-
-        const parentNameOnly = session.parent_name || firstName;
-        const childNameOnly = session.child_name || 'Ученик';
-        const rawGrade = session.child_grade || '';
-        const mappedGrade = mapChildGradeToEnum(rawGrade);
-
-        await getOrCreateUserProfile(supabase, {
-          telegramId: userId,
-          firstName: firstName,
-          username: username,
-          phone: phone,
-          fullName: parentNameOnly,
-        });
-
-        if (childNameOnly && parentUserId) {
-          const { data: existingChild } = await supabase
-            .from('children')
-            .select('id')
-            .eq('parent_id', parentUserId)
-            .ilike('name', childNameOnly)
-            .maybeSingle();
-
-          if (!existingChild) {
-            await supabase.from('children').insert({
-              parent_id: parentUserId,
-              name: childNameOnly,
-              grade: mappedGrade,
-            });
-          }
-        }
-
-        const { data: newBooking, error: dbError } = await supabase
-          .from('bookings')
-          .insert({
-            user_id: parentUserId,
-            slot_id: session.slot_id || null,
-            service_title: session.service_title || SERVICES[0].title,
-            price: session.price || SERVICES[0].price,
-            parent_name: parentNameOnly,
-            phone: phone,
-            telegram_handle: username,
-            child_name: childNameOnly,
-            child_grade: mappedGrade,
-            comment: `Время: ${session.slot_time || 'Уточнить'}. Возраст/Класс: ${rawGrade}`,
-            status: 'pending_payment',
-            admin_notes: `Запись создана через Telegram-бот (${new Date().toLocaleString('ru-RU')})`,
-          })
-          .select()
-          .single();
-
-        if (dbError) {
-          console.error('Supabase booking insert error:', dbError);
-        }
-
-        // МГНОВЕННОЕ УВЕДОМЛЕНИЕ ПЕДАГОГУ В ТЕЛЕГРАМ ЧАТ (КАК НА САЙТЕ!)
-        const teacherNotification = `📌 *НОВАЯ ЗАЯВКА НА УРОК ИЗ TELEGRAM-БОТА!*\n\n` +
-          `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
-          `⏱ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
-          `👤 *Родитель:* ${parentNameOnly} (${username || 'без ника'})\n` +
-          `📞 *Телефон:* \`${phone}\`\n` +
-          `👶 *Ученик:* ${childNameOnly} (${rawGrade})\n` +
-          `💰 *Стоимость:* ${session.price || SERVICES[0].price} ₽\n` +
-          `📌 *Статус:* ⏳ Ожидает оплаты чека\n` +
-          `🆔 *ID записи:* \`${newBooking?.id || ''}\``;
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: teacherChatId,
-            text: teacherNotification,
-            parse_mode: 'Markdown',
-          }),
-        });
-
-        const reqs = await getRequisites(supabase);
-
-        let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
-        if (reqs.cardNumber) {
-          payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
-        }
-        payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
-          `👤 *Получатель:* ${reqs.recipient}`;
-
-        const successMsg = `🎉 *УРОК УСПЕШНО ЗАБРОНИРОВАН!*\n\n` +
-          `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
-          `⏰ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
-          `👤 *Родитель:* ${parentNameOnly}\n` +
-          `👶 *Ученик:* ${childNameOnly} (${rawGrade})\n` +
-          `📞 *Телефон:* ${phone}\n` +
-          `💰 *К оплате:* *${session.price || SERVICES[0].price} ₽*\n\n` +
-          `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n${payDetailsStr}\n\n` +
-          `📸 *Отправьте фото/скриншот чека прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: successMsg,
-          parse_mode: 'Markdown',
-          reply_markup: yuliaContactInlineKb,
-        }, session);
-
-        session.step = undefined;
-        await setUserSession(supabase, parentUserId, session);
+        await finalizeBooking(botToken, chatId, teacherChatId, supabase, parentUserId, session, phone, firstName, username);
         return NextResponse.json({ success: true });
       }
 
@@ -956,7 +1005,7 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------
-    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК) - НА МЕСТЕ И РЕДАКТИРОВАНИЕ БЕЗ МИГАНИЯ
+    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК)
     // -------------------------------------------------------------
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
@@ -979,7 +1028,7 @@ export async function POST(req: Request) {
 
       let session = await getUserSession(supabase, parentUserId);
 
-      // Клик "⬅️ Назад в главное меню" -> Редактируем сообщение на месте
+      // Клик "⬅️ Назад в главное меню"
       if (callbackData === 'go_main_menu') {
         await clearUserSession(supabase, parentUserId);
         session = {};
@@ -988,7 +1037,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Клик "👤 Мой кабинет" -> Редактируем сообщение на месте
+      // Клик "👤 Мой кабинет"
       if (callbackData === 'menu_my') {
         await renderPersonalCabinetScreen(
           botToken,
@@ -1004,28 +1053,51 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Клик "📚 Программы и тарифы" -> Редактируем сообщение на месте
+      // Клик "👶 Мои дети (управление)"
+      if (callbackData === 'menu_children') {
+        await renderChildrenScreen(botToken, chatId, parentUserId, supabase, session, messageId);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Добавление ребёнка через инлайн-кнопку
+      if (callbackData === 'add_child_start') {
+        session.step = 'adding_child_name';
+
+        const addPromptMsg = `👶 *ДОБАВЛЕНИЕ НОВОГО УЧЕНИКА*\n\n` +
+          `Напишите имя ребёнка в сообщении (например: \`Артём\`):`;
+
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в кабинет', callback_data: 'menu_children' }]],
+        };
+
+        await editOrSendMessage(botToken, chatId, messageId, addPromptMsg, cancelInlineKb, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Клик "📚 Программы и тарифы"
       if (callbackData === 'menu_programs') {
         await renderProgramsScreen(botToken, chatId, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "💳 Реквизиты оплаты" -> Редактируем сообщение на месте
+      // Клик "💳 Реквизиты оплаты"
       if (callbackData === 'menu_requisites') {
         await renderRequisitesScreen(botToken, chatId, supabase, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "💬 Связаться с педагогом" -> Редактируем сообщение на месте
+      // Клик "💬 Связаться с педагогом"
       if (callbackData === 'menu_contact') {
         await renderContactScreen(botToken, chatId, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "📋 История заказов" -> Редактируем сообщение на месте
+      // Клик "📋 История заказов"
       if (callbackData === 'show_history') {
         const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '';
 
@@ -1132,7 +1204,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Клик по инлайн-слоту времени
+      // Клик по инлайн-слоту времени -> ШАГ 3 (УМНЫЙ ВЫБОР УЧЕНИКА)
       if (callbackData.startsWith('slot_')) {
         const slotId = callbackData.replace('slot_', '');
 
@@ -1155,17 +1227,147 @@ export async function POST(req: Request) {
 
         session.slot_id = slotId;
         session.slot_time = timeStr;
-        session.step = 'awaiting_parent_name';
+
+        const { data: childrenList } = await supabase
+          .from('children')
+          .select('*')
+          .eq('parent_id', parentUserId);
+
+        // Если у родителя уже есть привязанные дети в базе -> Показываем кнопки для 1-клик выбора!
+        if (childrenList && childrenList.length > 0) {
+          session.step = 'select_child_for_booking';
+
+          let childSelectMsg = `⏰ *ВЫБРАНО ВРЕМЯ:* \`${timeStr}\`\n\n` +
+            `👶 *ВЫБЕРИТЕ УЧЕНИКА ДЛЯ ЗАНЯТИЯ:*\n` +
+            `Выберите ребёнка из Вашего Личного кабинета или укажите нового:`;
+
+          const inline_keyboard: any[][] = [];
+          childrenList.forEach((c: any) => {
+            inline_keyboard.push([{
+              text: `👶 ${c.name} (${formatGradeDisplay(c.grade)})`,
+              callback_data: `pick_child_${c.id}`,
+            }]);
+          });
+
+          inline_keyboard.push([{ text: '➕ Записать другого ребёнка', callback_data: 'new_child_booking' }]);
+          inline_keyboard.push([{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]);
+
+          await editOrSendMessage(botToken, chatId, messageId, childSelectMsg, { inline_keyboard }, session);
+          await setUserSession(supabase, parentUserId, session);
+          return NextResponse.json({ success: true });
+        }
+
+        // Если у родителя пока нет сохранённых детей
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', parentUserId)
+          .maybeSingle();
+
+        const parentName = profile?.full_name || callbackQuery.from?.first_name || 'Родитель';
+        session.parent_name = parentName;
+        session.step = 'awaiting_child_name';
 
         const updatedSlotText = `⏰ *ВЫБРАНО ВРЕМЯ:* \`${timeStr}\`\n\n` +
-          `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
-          `Напишите Ваше имя в сообщении (например: \`${callbackQuery.from?.first_name || 'Родитель'}\`):`;
+          `👶 *ШАГ 3: Как зовут ребёнка?*\n` +
+          `Напишите имя ребёнка в сообщении (например: \`Артём\`):`;
 
         const cancelInlineKb = {
           inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
         };
 
         await editOrSendMessage(botToken, chatId, messageId, updatedSlotText, cancelInlineKb, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Клик по зарегистрированному ребёнку (1-клик быстрая запись!)
+      if (callbackData.startsWith('pick_child_')) {
+        const childId = callbackData.replace('pick_child_', '');
+
+        const { data: childObj } = await supabase
+          .from('children')
+          .select('*')
+          .eq('id', childId)
+          .maybeSingle();
+
+        if (childObj) {
+          session.child_name = childObj.name;
+          session.child_grade = formatGradeDisplay(childObj.grade);
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', parentUserId)
+          .maybeSingle();
+
+        const parentName = profile?.full_name || callbackQuery.from?.first_name || 'Родитель';
+        session.parent_name = parentName;
+
+        const rawPhone = profile?.phone || '';
+        const parentPhone = (rawPhone && rawPhone.replace(/\D/g, '').length >= 6) ? rawPhone : '';
+
+        // Если телефон уже есть в профиле -> СРАЗУ ЗАВЕРШАЕМ БРОНИРОВАНИЕ В 1 КЛИК!
+        if (parentPhone) {
+          await finalizeBooking(
+            botToken,
+            chatId,
+            teacherChatId,
+            supabase,
+            parentUserId,
+            session,
+            parentPhone,
+            callbackQuery.from?.first_name || 'Родитель',
+            callbackQuery.from?.username ? `@${callbackQuery.from.username}` : ''
+          );
+          return NextResponse.json({ success: true });
+        }
+
+        // Если телефона нет -> Просим только телефон
+        session.step = 'awaiting_phone';
+
+        const phonePromptMsg = `👍 Ученик: *${session.child_name}*\n\n` +
+          `📱 *Укажите Ваш контактный номер телефона*\n` +
+          `Нажмите кнопку ниже или введите номер вручную:`;
+
+        const contactKb = {
+          keyboard: [
+            [{ text: '📱 Отправить мой номер телефона', request_contact: true }],
+          ],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        };
+
+        await sendAndTrackMessage(botToken, chatId, {
+          text: phonePromptMsg,
+          parse_mode: 'Markdown',
+          reply_markup: contactKb,
+        }, session);
+
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Клик "➕ Записать другого ребёнка"
+      if (callbackData === 'new_child_booking') {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', parentUserId)
+          .maybeSingle();
+
+        session.parent_name = profile?.full_name || callbackQuery.from?.first_name || 'Родитель';
+        session.step = 'awaiting_child_name';
+
+        const promptText = `👶 *УКАЖИТЕ ИМЯ НОВОГО УЧЕНИКА*\n\n` +
+          `Напишите имя ребёнка в сообщении (например: \`Артём\`):`;
+
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
+        };
+
+        await editOrSendMessage(botToken, chatId, messageId, promptText, cancelInlineKb, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
