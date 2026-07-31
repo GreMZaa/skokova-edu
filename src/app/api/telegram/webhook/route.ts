@@ -343,7 +343,7 @@ export async function POST(req: Request) {
     const teacherChatId = sanitizeEnv(process.env.TELEGRAM_TEACHER_CHAT_ID) || '-5128191766';
     const supabase = createAdminClient();
 
-    // Главное постоянное меню Telegram бота (Bottom Reply Keyboard)
+    // Главное постоянное меню Telegram бота (Bottom Reply Keyboard) - ВСЕГДА АКТИВНО И ЗАКРЕПЛЕНО
     const mainReplyKeyboard = {
       keyboard: [
         [
@@ -359,6 +359,7 @@ export async function POST(req: Request) {
         ],
       ],
       resize_keyboard: true,
+      is_persistent: true,
     };
 
     // Клавиатура отмены / возврата
@@ -367,6 +368,7 @@ export async function POST(req: Request) {
         [{ text: '⬅️ Назад в главное меню' }],
       ],
       resize_keyboard: true,
+      is_persistent: true,
     };
 
     // Прямая инлайн-кнопка для связи с Юлией Павловной
@@ -575,6 +577,11 @@ export async function POST(req: Request) {
           reply_markup: serviceInlineKeyboard,
         }, session);
 
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
+        }, session);
+
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -605,6 +612,11 @@ export async function POST(req: Request) {
           text: programsMsg,
           parse_mode: 'Markdown',
           reply_markup: programsInlineKb,
+        }, session);
+
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
         }, session);
 
         await setUserSession(supabase, parentUserId, session);
@@ -678,6 +690,11 @@ export async function POST(req: Request) {
           reply_markup: cabinetInlineKb,
         }, session);
 
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
+        }, session);
+
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -702,6 +719,11 @@ export async function POST(req: Request) {
           reply_markup: yuliaContactInlineKb,
         }, session);
 
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
+        }, session);
+
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -719,6 +741,11 @@ export async function POST(req: Request) {
           parse_mode: 'Markdown',
           disable_web_page_preview: true,
           reply_markup: yuliaContactInlineKb,
+        }, session);
+
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
         }, session);
 
         await setUserSession(supabase, parentUserId, session);
@@ -757,7 +784,7 @@ export async function POST(req: Request) {
         }, session);
 
         await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Выберите удобный слот выше:',
+          text: '👇 Выберите удобный слот выше или вернитесь в главное меню:',
           reply_markup: cancelKeyboard,
         }, session);
 
@@ -837,6 +864,7 @@ export async function POST(req: Request) {
             [{ text: '⬅️ Назад в главное меню' }],
           ],
           resize_keyboard: true,
+          is_persistent: true,
         };
 
         await sendAndTrackMessage(botToken, chatId, {
@@ -933,7 +961,7 @@ export async function POST(req: Request) {
         }, session);
 
         await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Используйте меню ниже для дальнейших действий:',
+          text: '👇 Главное меню:',
           reply_markup: mainReplyKeyboard,
         }, session);
 
@@ -1062,6 +1090,11 @@ export async function POST(req: Request) {
           reply_markup: historyInlineKb,
         }, session);
 
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
+        }, session);
+
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -1086,6 +1119,11 @@ export async function POST(req: Request) {
           text: payMsg,
           parse_mode: 'Markdown',
           reply_markup: yuliaContactInlineKb,
+        }, session);
+
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Главное меню:',
+          reply_markup: mainReplyKeyboard,
         }, session);
 
         await setUserSession(supabase, parentUserId, session);
