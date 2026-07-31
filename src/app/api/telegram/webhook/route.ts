@@ -21,9 +21,6 @@ export async function POST(req: Request) {
     const mainReplyKeyboard = {
       keyboard: [
         [
-          { text: '📅 Записаться (Mini App)', web_app: { url: twaUrl } },
-        ],
-        [
           { text: '👤 Мой кабинет' },
           { text: '📚 Программы и тарифы' },
         ],
@@ -48,14 +45,7 @@ export async function POST(req: Request) {
       if (text.startsWith('/start')) {
         const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
           `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов.\n\n` +
-          `Выберите нужный раздел в меню ниже или нажмите кнопку:`;
-
-        const inlineKb = {
-          inline_keyboard: [
-            [{ text: '🚀 Открыть Mini App', web_app: { url: twaUrl } }],
-            [{ text: '💬 Связаться с педагогом', url: 'https://t.me/ssharonovv' }],
-          ],
-        };
+          `Нажмите кнопку *«Записаться»* слева внизу для запуска Mini App или выберите раздел в меню ниже:`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -64,7 +54,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: welcomeText,
             parse_mode: 'Markdown',
-            reply_markup: inlineKb,
+            reply_markup: mainReplyKeyboard,
           }),
         });
 
