@@ -11,12 +11,9 @@ const userSessions: Record<number, {
   step?: string;
   service_title?: string;
   price?: number;
-  slot_id?: string;
-  slot_time?: string;
   child_name?: string;
   child_grade?: string;
   phone?: string;
-  parent_name?: string;
 }> = {};
 
 export async function POST(req: Request) {
@@ -153,12 +150,12 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------
-    // 2. ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ И КОМАНД
+    // 2. ОБРАБОТКА СООБЩЕНИЙ, КОМАНД И КОНТАКТОВ В ЧАТЕ TELEGRAM
     // -------------------------------------------------------------
-    if (update.message && update.message.text) {
+    if (update.message && (update.message.text !== undefined || update.message.contact !== undefined)) {
       const chatId = update.message.chat.id;
       const userId = update.message.from?.id || chatId;
-      const text = update.message.text.trim();
+      const text = (update.message.text || '').trim();
       const username = update.message.from?.username ? `@${update.message.from.username}` : '';
       const firstName = update.message.from?.first_name || 'Гость';
 
@@ -207,7 +204,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📅 Записаться на урок" -> Перевод меню на выбор формата
+      // Кнопка "📅 Записаться на урок" -> Перевод меню на выбор тарифа
       if (text.includes('Записаться') || text === '/book') {
         userSessions[userId] = { step: 'select_service' };
 
@@ -241,29 +238,28 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Выбор программы в нижнем меню
+      // Выбор программы в нижнем меню -> Переход к ШАГУ 2 (Запрос Имени)
       if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
         const isOffline = text.includes('Оффлайн');
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
 
         userSessions[userId] = {
-          step: 'awaiting_child_data',
+          step: 'awaiting_child_name',
           service_title: selectedTitle,
           price: selectedPrice,
         };
 
-        const childPromptMsg = `👍 Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n` +
-          `👶 *ШАГ 2: Укажите данные ребёнка*\n` +
-          `Напишите в сообщении ниже *Имя* и *Возраст / Класс* ребёнка.\n` +
-          `(Например: \`Артём, 6 лет / Подготовка к школе\`):`;
+        const namePromptMsg = `👍 Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n` +
+          `👶 *ШАГ 2: Укажите имя ребёнка*\n` +
+          `Напишите в сообщении ниже, как зовут ребёнка (например: \`Артём\`):`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: childPromptMsg,
+            text: namePromptMsg,
             parse_mode: 'Markdown',
             reply_markup: cancelKeyboard,
           }),
@@ -272,15 +268,39 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Если пользователь в процессе ввода данных ребенка (Шаг записи)
-      if (session.step === 'awaiting_child_data') {
+      // ШАГ 2: Пользователь ввёл ИМЯ -> Переход к ШАГУ 3 (Запрос Возраста / Класса)
+      if (session.step === 'awaiting_child_name' && text) {
         session.child_name = text;
+        session.step = 'awaiting_child_age_grade';
+        userSessions[userId] = session;
+
+        const agePromptMsg = `👍 Имя ребёнка: *${text}*\n\n` +
+          `🎓 *ШАГ 3: Укажите возраст или класс ребёнка*\n` +
+          `Напишите в сообщении ниже (например: \`6 лет, Подготовка к школе\` или \`3 класс\`):`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: agePromptMsg,
+            parse_mode: 'Markdown',
+            reply_markup: cancelKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      // ШАГ 3: Пользователь ввёл ВОЗРАСТ/КЛАСС -> Переход к ШАГУ 4 (Запрос Телефона)
+      if (session.step === 'awaiting_child_age_grade' && text) {
+        session.child_grade = text;
         session.step = 'awaiting_phone';
         userSessions[userId] = session;
 
-        const phoneMsg = `👍 Ученик: *${text}*\n\n` +
-          `📱 *ШАГ 3: Укажите номер телефона для связи*\n` +
-          `Нажмите кнопку *«📱 Отправить мой номер телефона»* ниже или введите номер вручную:`;
+        const phonePromptMsg = `👍 Возраст / Класс: *${text}*\n\n` +
+          `📱 *ШАГ 4: Укажите Ваш контактный номер телефона*\n` +
+          `Нажмите кнопку *«📱 Отправить мой номер телефона»* внизу или введите номер вручную:`;
 
         const contactKb = {
           keyboard: [
@@ -295,7 +315,7 @@ export async function POST(req: Request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: phoneMsg,
+            text: phonePromptMsg,
             parse_mode: 'Markdown',
             reply_markup: contactKb,
           }),
@@ -304,8 +324,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Завершение записи при вводе или передаче телефона
-      if (session.step === 'awaiting_phone' || update.message.contact) {
+      // ШАГ 4: Пользователь передал номер (кнопкой контактов или текстом) -> СОХРАНЕНИЕ В SUPABASE
+      if (session.step === 'awaiting_phone' || update.message.contact !== undefined) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
 
@@ -319,7 +339,7 @@ export async function POST(req: Request) {
             phone: phone,
             telegram_handle: username,
             child_name: session.child_name || 'Ученик',
-            child_grade: 'Подготовка к школе',
+            child_grade: session.child_grade || 'Подготовка к школе',
             status: 'pending_payment',
             admin_notes: `Запись создана через Telegram-бот (${new Date().toLocaleString('ru-RU')})`,
           });
@@ -335,7 +355,7 @@ export async function POST(req: Request) {
 
         const successMsg = `🎉 *УРОК УСПЕШНО ЗАБРОНИРОВАН!*\n\n` +
           `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
-          `👶 *Ученик:* ${session.child_name || 'Ученик'}\n` +
+          `👶 *Ученик:* ${session.child_name || 'Ученик'} (${session.child_grade || 'Подготовка к школе'})\n` +
           `📞 *Телефон:* ${phone}\n` +
           `💰 *К оплате:* *${session.price || SERVICES[0].price} ₽*\n\n` +
           `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n` +
@@ -410,7 +430,7 @@ export async function POST(req: Request) {
               b.status === 'pending_payment' ? '⏳ Ожидает оплаты' :
               b.status === 'receipt_uploaded' ? '📑 Чек на проверке' : b.status;
             cabMsg += `*${i + 1}. ${b.service_title}*\n` +
-              `👶 Ученик: ${b.child_name}\n` +
+              `👶 Ученик: ${b.child_name} (${b.child_grade})\n` +
               `📌 Статус: *${statusStr}*\n` +
               `💰 Сумма: ${b.price} ₽\n\n`;
           });
