@@ -158,6 +158,44 @@ async function getOrCreateUserProfile(
   return parentUserId;
 }
 
+// Построение сессий пользователей в Supabase Auth user_metadata (гарантирует персистентность в Vercel Serverless!)
+async function getUserSession(supabase: any, parentUserId: string) {
+  if (!parentUserId) return {};
+  try {
+    const { data } = await supabase.auth.admin.getUserById(parentUserId);
+    return data?.user?.user_metadata?.telegram_session || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+async function setUserSession(supabase: any, parentUserId: string, session: any) {
+  if (!parentUserId) return;
+  try {
+    const { data: userRes } = await supabase.auth.admin.getUserById(parentUserId);
+    const currentMetadata = userRes?.user?.user_metadata || {};
+    await supabase.auth.admin.updateUserById(parentUserId, {
+      user_metadata: { ...currentMetadata, telegram_session: session },
+    });
+  } catch (e) {
+    console.error('Error setting user session:', e);
+  }
+}
+
+async function clearUserSession(supabase: any, parentUserId: string) {
+  if (!parentUserId) return;
+  try {
+    const { data: userRes } = await supabase.auth.admin.getUserById(parentUserId);
+    const currentMetadata = userRes?.user?.user_metadata || {};
+    delete currentMetadata.telegram_session;
+    await supabase.auth.admin.updateUserById(parentUserId, {
+      user_metadata: currentMetadata,
+    });
+  } catch (e) {
+    console.error('Error clearing user session:', e);
+  }
+}
+
 // Построитель компактной сетки выбора слотов даты и времени (Инлайн-клавиатура < 64 байт!)
 async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
   const nowIso = new Date().toISOString();
@@ -249,19 +287,6 @@ async function syncBotDescription(botToken: string) {
   }
 }
 
-// Временное хранилище шагов диалога (Session state for Telegram users)
-const userSessions: Record<number, {
-  step?: string;
-  service_title?: string;
-  price?: number;
-  slot_id?: string;
-  slot_time?: string;
-  parent_name?: string;
-  child_name?: string;
-  child_grade?: string;
-  phone?: string;
-}> = {};
-
 export async function POST(req: Request) {
   try {
     const update = await req.json();
@@ -271,7 +296,7 @@ export async function POST(req: Request) {
     }
 
     const teacherChatId = sanitizeEnv(process.env.TELEGRAM_TEACHER_CHAT_ID) || '-5128191766';
-    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://skokova-edu.vercel.app').replace(/\/$/, '');
+    const supabase = createAdminClient();
 
     // Главное постоянное меню Telegram бота (Bottom Reply Keyboard)
     const mainReplyKeyboard = {
@@ -298,8 +323,6 @@ export async function POST(req: Request) {
       ],
       resize_keyboard: true,
     };
-
-    const supabase = createAdminClient();
 
     // -------------------------------------------------------------
     // 1. ОБРАБОТКА ПОЛУЧЕНИЯ ФОТО / ЧЕКА В ЧАТЕ TELEGRAM
@@ -410,11 +433,19 @@ export async function POST(req: Request) {
       const username = update.message.from?.username ? `@${update.message.from.username}` : '';
       const firstName = update.message.from?.first_name || 'Родитель';
 
-      const session = userSessions[userId] || {};
+      // 1. Получаем/создаем ID профиля родителя в Supabase
+      const parentUserId = await getOrCreateUserProfile(supabase, {
+        telegramId: userId,
+        firstName: firstName,
+        username: username,
+      });
+
+      // 2. Считываем сохраненную сессию пользователя из Supabase (гарантия работы во Vercel Serverless!)
+      let session = await getUserSession(supabase, parentUserId);
 
       // Нажатие на "⬅️ Назад в главное меню" или "/cancel"
       if (text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
-        delete userSessions[userId];
+        await clearUserSession(supabase, parentUserId);
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -431,17 +462,8 @@ export async function POST(req: Request) {
 
       // Команда /start -> Сразу создаем Личный кабинет в Supabase
       if (text.startsWith('/start')) {
-        delete userSessions[userId];
-
-        // Синхронизируем официальное описание бота в Telegram
+        await clearUserSession(supabase, parentUserId);
         syncBotDescription(botToken);
-
-        // Автоматически создаем пользователя в Supabase Auth и таблицу profiles при первом входе /start
-        await getOrCreateUserProfile(supabase, {
-          telegramId: userId,
-          firstName: firstName,
-          username: username,
-        });
 
         const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
           `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
@@ -467,7 +489,8 @@ export async function POST(req: Request) {
 
       // Кнопка "📅 Записаться на урок" -> ШАГ 1: Перевод меню на выбор тарифа (Инлайн-кнопки)
       if (text.includes('Записаться') || text === '/book') {
-        userSessions[userId] = { step: 'select_service' };
+        session = { step: 'select_service' };
+        await setUserSession(supabase, parentUserId, session);
 
         let servicesMsg = `🎯 *ШАГ 1: ВЫБЕРИТЕ ПРОГРАММУ ЗАНЯТИЙ*\n\n` +
           `1️⃣ *Онлайн-занятие (Индивидуально)* — 600 ₽ / 40 мин\n` +
@@ -503,11 +526,12 @@ export async function POST(req: Request) {
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
 
-        userSessions[userId] = {
+        session = {
           step: 'select_slot_time',
           service_title: selectedTitle,
           price: selectedPrice,
         };
+        await setUserSession(supabase, parentUserId, session);
 
         const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
 
@@ -550,7 +574,7 @@ export async function POST(req: Request) {
       if (session.step === 'select_slot_time' && text && !text.includes('Записаться') && !text.includes('Онлайн') && !text.includes('Оффлайн')) {
         session.slot_time = text.replace('⏰', '').trim();
         session.step = 'awaiting_parent_name';
-        userSessions[userId] = session;
+        await setUserSession(supabase, parentUserId, session);
 
         const parentPromptMsg = `👍 Время: *${session.slot_time}*\n\n` +
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
@@ -574,7 +598,7 @@ export async function POST(req: Request) {
       if (session.step === 'awaiting_parent_name' && text) {
         session.parent_name = text;
         session.step = 'awaiting_child_name';
-        userSessions[userId] = session;
+        await setUserSession(supabase, parentUserId, session);
 
         const childNamePromptMsg = `👍 Родитель: *${text}*\n\n` +
           `👶 *ШАГ 4: Как зовут ребёнка?*\n` +
@@ -598,7 +622,7 @@ export async function POST(req: Request) {
       if (session.step === 'awaiting_child_name' && text) {
         session.child_name = text;
         session.step = 'awaiting_child_age_grade';
-        userSessions[userId] = session;
+        await setUserSession(supabase, parentUserId, session);
 
         const agePromptMsg = `👍 Ребёнок: *${text}*\n\n` +
           `🎓 *ШАГ 5: Укажите возраст или класс ребёнка*\n` +
@@ -622,7 +646,7 @@ export async function POST(req: Request) {
       if (session.step === 'awaiting_child_age_grade' && text) {
         session.child_grade = text;
         session.step = 'awaiting_phone';
-        userSessions[userId] = session;
+        await setUserSession(supabase, parentUserId, session);
 
         const phonePromptMsg = `👍 Возраст / Класс: *${text}*\n\n` +
           `📱 *ШАГ 6: Укажите Ваш контактный номер телефона*\n` +
@@ -660,8 +684,8 @@ export async function POST(req: Request) {
         const rawGrade = session.child_grade || '';
         const mappedGrade = mapChildGradeToEnum(rawGrade);
 
-        // 1. Автоматическое обновление/создание профиля родителя в Supabase Auth и таблице `profiles`
-        const parentUserId = await getOrCreateUserProfile(supabase, {
+        // 1. Автоматическое обновление профиля родителя в Supabase Auth и таблице `profiles`
+        await getOrCreateUserProfile(supabase, {
           telegramId: userId,
           firstName: firstName,
           username: username,
@@ -711,7 +735,8 @@ export async function POST(req: Request) {
           console.error('Supabase booking insert error:', dbError);
         }
 
-        delete userSessions[userId];
+        // Очищаем сессию диалога
+        await clearUserSession(supabase, parentUserId);
 
         // Получаем реквизиты из базы данных Supabase
         const reqs = await getRequisites(supabase);
@@ -887,18 +912,27 @@ export async function POST(req: Request) {
         body: JSON.stringify({ callback_query_id: callbackQuery.id }),
       });
 
+      const userId = callbackQuery.from?.id || chatId;
+      const parentUserId = await getOrCreateUserProfile(supabase, {
+        telegramId: userId,
+        firstName: callbackQuery.from?.first_name || 'Родитель',
+        username: callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '',
+      });
+
+      let session = await getUserSession(supabase, parentUserId);
+
       // Клик по выбору тарифа/программы (Инлайн-кнопки)
       if (callbackData.startsWith('service_')) {
         const isOffline = callbackData === 'service_offline';
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
 
-        const userId = callbackQuery.from?.id || chatId;
-        userSessions[userId] = {
+        session = {
           step: 'select_slot_time',
           service_title: selectedTitle,
           price: selectedPrice,
         };
+        await setUserSession(supabase, parentUserId, session);
 
         const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
 
@@ -959,12 +993,10 @@ export async function POST(req: Request) {
           });
         }
 
-        const userId = callbackQuery.from?.id || chatId;
-        const session = userSessions[userId] || {};
         session.slot_id = slotId;
         session.slot_time = timeStr;
         session.step = 'awaiting_parent_name';
-        userSessions[userId] = session;
+        await setUserSession(supabase, parentUserId, session);
 
         const updatedSlotText = `⏰ *ВЫБРАНО ВРЕМЯ:* \`${timeStr}\`\n\n` +
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
