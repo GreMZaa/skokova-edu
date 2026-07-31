@@ -29,9 +29,8 @@ export async function POST(req: Request) {
 
     const teacherChatId = sanitizeEnv(process.env.TELEGRAM_TEACHER_CHAT_ID) || '-5128191766';
     const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://skokova-edu.vercel.app').replace(/\/$/, '');
-    const twaUrl = `${baseUrl}/twa`;
 
-    // Постоянное меню кнопок внизу чата Telegram
+    // Главное постоянное меню Telegram бота (Bottom Reply Keyboard)
     const mainReplyKeyboard = {
       keyboard: [
         [
@@ -45,6 +44,14 @@ export async function POST(req: Request) {
         [
           { text: '💬 Связаться с педагогом' },
         ],
+      ],
+      resize_keyboard: true,
+    };
+
+    // Клавиатура отмены / возврата
+    const cancelKeyboard = {
+      keyboard: [
+        [{ text: '⬅️ Назад в главное меню' }],
       ],
       resize_keyboard: true,
     };
@@ -124,7 +131,7 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             chat_id: chatId,
             text: `✅ *Ваш чек успешно получен и отправлен педагогу на проверку!*\n\n` +
-              `Скокова Юлия Павловна свяжется с Вами и подтвердит время занятия. Статус записи можно отслеживать в разделе *«👤 2) Мой кабинет»*.`,
+              `Скокова Юлия Павловна свяжется с Вами и подтвердит время занятия. Статус записи можно отслеживать в разделе *«👤 Мой кабинет»*.`,
             parse_mode: 'Markdown',
             reply_markup: mainReplyKeyboard,
           }),
@@ -135,7 +142,7 @@ export async function POST(req: Request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: `📑 Мы получили Ваш документ/фото. Чтобы привязать чек к конкретной записи, сначала выберите время через *«📅 1) Записаться на урок»*.`,
+            text: `📑 Мы получили Ваш чек. Чтобы привязать его к записи, сначала нажмите *«📅 Записаться на урок»* в меню ниже.`,
             parse_mode: 'Markdown',
             reply_markup: mainReplyKeyboard,
           }),
@@ -157,17 +164,34 @@ export async function POST(req: Request) {
 
       const session = userSessions[userId] || {};
 
+      // Нажатие на "⬅️ Назад в главное меню" или "/cancel"
+      if (text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
+        delete userSessions[userId];
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: '👌 Вы вернулись в главное меню. Выберите нужный раздел:',
+            reply_markup: mainReplyKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
       // Команда /start
       if (text.startsWith('/start')) {
         delete userSessions[userId];
 
         const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
           `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
-          `✨ *Все возможности доступны прямо в Telegram:*\n` +
+          `✨ *Все возможности доступны прямо в меню ниже:*\n` +
           `• 📅 Запись на уроки и выбор времени\n` +
           `• 👤 Кабинет родителя и история занятий\n` +
           `• 📚 Программы, тарифы и реквизиты СБП\n\n` +
-          `Выберите нужный пункт в меню ниже:`;
+          `Выберите нужный раздел на нижней клавиатуре:`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -183,22 +207,24 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📅 Записаться на урок"
+      // Кнопка "📅 Записаться на урок" -> Перевод меню на выбор формата
       if (text.includes('Записаться') || text === '/book') {
-        userSessions[userId] = { step: 'awaiting_child_data' };
+        userSessions[userId] = { step: 'select_service' };
 
-        let servicesMsg = `🎯 *ШАГ 1: ВЫБЕРИТЕ НАПРАВЛЕНИЕ ОБУЧЕНИЯ*\n\n`;
-        SERVICES.forEach((s, idx) => {
-          servicesMsg += `*${idx + 1}. ${s.title}*\n` +
-            `⏱ ${s.duration_minutes} мин • 💰 *${s.price} ₽*\n` +
-            `📖 ${s.description}\n\n`;
-        });
-        servicesMsg += `Нажмите на подходящую программу ниже:`;
+        let servicesMsg = `🎯 *ШАГ 1: ВЫБЕРИТЕ ПРОГРАММУ ЗАНЯТИЙ*\n\n` +
+          `1️⃣ *Онлайн-занятие (Индивидуально)* — 600 ₽ / 40 мин\n` +
+          `Индивидуальный урок по математике, чтению или грамоте через Zoom / Яндекс Телемост.\n\n` +
+          `2️⃣ *Оффлайн-занятие (В кабинете)* — 800 ₽ / 40 мин\n` +
+          `Очный урок в оборудованном кабинете педагога в г. Тольятти.\n\n` +
+          `Выберите нужный вариант на клавиатуре внизу:`;
 
-        const inlineServices = {
-          inline_keyboard: SERVICES.map((s, i) => [
-            { text: `👉 ${s.title} (${s.price} ₽)`, callback_data: `select_service_${i}` },
-          ]),
+        const serviceReplyKeyboard = {
+          keyboard: [
+            [{ text: '👉 Онлайн-занятие (600 ₽)' }],
+            [{ text: '👉 Оффлайн-занятие (800 ₽)' }],
+            [{ text: '⬅️ Назад в главное меню' }],
+          ],
+          resize_keyboard: true,
         };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -208,7 +234,38 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: servicesMsg,
             parse_mode: 'Markdown',
-            reply_markup: inlineServices,
+            reply_markup: serviceReplyKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      // Выбор программы в нижнем меню
+      if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
+        const isOffline = text.includes('Оффлайн');
+        const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
+        const selectedPrice = isOffline ? 800 : 600;
+
+        userSessions[userId] = {
+          step: 'awaiting_child_data',
+          service_title: selectedTitle,
+          price: selectedPrice,
+        };
+
+        const childPromptMsg = `👍 Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n` +
+          `👶 *ШАГ 2: Укажите данные ребёнка*\n` +
+          `Напишите в сообщении ниже *Имя* и *Возраст / Класс* ребёнка.\n` +
+          `(Например: \`Артём, 6 лет / Подготовка к школе\`):`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: childPromptMsg,
+            parse_mode: 'Markdown',
+            reply_markup: cancelKeyboard,
           }),
         });
 
@@ -221,17 +278,16 @@ export async function POST(req: Request) {
         session.step = 'awaiting_phone';
         userSessions[userId] = session;
 
-        const phoneMsg = `👍 Принято: *${text}*\n\n` +
-          `📱 *ШАГ 4: Укажите Ваш контактный номер телефона для связи*\n` +
-          `(Например: \`+7 937 214-42-05\` или отправьте контакт через кнопку ниже):`;
+        const phoneMsg = `👍 Ученик: *${text}*\n\n` +
+          `📱 *ШАГ 3: Укажите номер телефона для связи*\n` +
+          `Нажмите кнопку *«📱 Отправить мой номер телефона»* ниже или введите номер вручную:`;
 
         const contactKb = {
           keyboard: [
             [{ text: '📱 Отправить мой номер телефона', request_contact: true }],
-            [{ text: '⬅️ Отмена' }],
+            [{ text: '⬅️ Назад в главное меню' }],
           ],
           resize_keyboard: true,
-          one_time_keyboard: true,
         };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -248,13 +304,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Если пользователь в процессе ввода телефона (Завершение записи)
+      // Завершение записи при вводе или передаче телефона
       if (session.step === 'awaiting_phone' || update.message.contact) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
 
         // Создаем запись в базе данных Supabase
-        const { data: newBooking, error } = await supabase
+        await supabase
           .from('bookings')
           .insert({
             service_title: session.service_title || SERVICES[0].title,
@@ -266,9 +322,7 @@ export async function POST(req: Request) {
             child_grade: 'Подготовка к школе',
             status: 'pending_payment',
             admin_notes: `Запись создана через Telegram-бот (${new Date().toLocaleString('ru-RU')})`,
-          })
-          .select()
-          .single();
+          });
 
         delete userSessions[userId];
 
@@ -288,7 +342,7 @@ export async function POST(req: Request) {
           `📱 *Телефон:* \`${sbpPhone}\`\n` +
           `💳 *Карта:* \`${cardNum}\`\n` +
           `👤 *Получатель:* ${recipient}\n\n` +
-          `📸 *Отправьте фото/скриншот чека об оплате прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
+          `📸 *Отправьте фото/скриншот чека прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -316,14 +370,8 @@ export async function POST(req: Request) {
             `📖 ${service.description}\n\n`;
         });
 
-        programsMsg += `💡 *Тарифы:* Онлайн-урок — *600 ₽* / 40 мин, Оффлайн — *800 ₽* / 40 мин.`;
-
-        const inlineKb = {
-          inline_keyboard: [
-            [{ text: '📅 Записаться прямо сейчас', callback_data: 'start_booking' }],
-            [{ text: '🌐 Открыть интерактивное Mini App', web_app: { url: twaUrl } }],
-          ],
-        };
+        programsMsg += `💡 *Тарифы:* Онлайн-урок — *600 ₽* / 40 мин, Оффлайн — *800 ₽* / 40 мин.\n\n` +
+          `Для записи нажмите кнопку *«📅 Записаться на урок»* в меню ниже.`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -332,7 +380,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: programsMsg,
             parse_mode: 'Markdown',
-            reply_markup: inlineKb,
+            reply_markup: mainReplyKeyboard,
           }),
         });
 
@@ -368,13 +416,6 @@ export async function POST(req: Request) {
           });
         }
 
-        const inlineKb = {
-          inline_keyboard: [
-            [{ text: '📅 Записаться на новый урок', callback_data: 'start_booking' }],
-            [{ text: '🌐 Войти через Mini App', web_app: { url: `${baseUrl}/my-dashboard` } }],
-          ],
-        };
-
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -382,7 +423,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: cabMsg,
             parse_mode: 'Markdown',
-            reply_markup: inlineKb,
+            reply_markup: mainReplyKeyboard,
           }),
         });
 
@@ -446,13 +487,12 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------
-    // 3. ОБРАБОТКА CALLBACK QUERIES (ИНЛАЙН КНОПКИ)
+    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК ПЕДАГОГА)
     // -------------------------------------------------------------
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
       const callbackData = callbackQuery.data;
       const chatId = callbackQuery.message.chat.id;
-      const userId = callbackQuery.from?.id || chatId;
       const messageId = callbackQuery.message.message_id;
 
       await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
@@ -460,199 +500,6 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callback_query_id: callbackQuery.id }),
       });
-
-      // Выбор программы в инлайн записи
-      if (callbackData.startsWith('select_service_')) {
-        const idx = parseInt(callbackData.replace('select_service_', ''), 10);
-        const selected = SERVICES[idx] || SERVICES[0];
-
-        userSessions[userId] = {
-          step: 'awaiting_slot',
-          service_title: selected.title,
-          price: selected.price,
-        };
-
-        // Запрашиваем свободные слоты из базы Supabase
-        const { data: slots } = await supabase
-          .from('time_slots')
-          .select('*')
-          .eq('is_booked', false)
-          .gte('start_time', new Date().toISOString())
-          .order('start_time', { ascending: true })
-          .limit(8);
-
-        let slotsMsg = `📅 *ВЫБЕРИТЕ УДОБНОЕ ВРЕМЯ ЗАНЯТИЯ*\n\n` +
-          `Выбрано направление: *${selected.title}* (${selected.price} ₽)\n\n`;
-
-        let inlineSlots: any[] = [];
-        if (slots && slots.length > 0) {
-          slotsMsg += `Доступные даты и слоты:`;
-          inlineSlots = slots.map((slot: any) => {
-            const dateStr = new Date(slot.start_time).toLocaleString('ru-RU', {
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Europe/Samara',
-            });
-            return [{ text: `⏰ ${dateStr}`, callback_data: `select_slot_${slot.id}` }];
-          });
-        } else {
-          slotsMsg += `В данный момент доступные слоты на эту неделю формируются.\nВыберите любое удобное время, написав сообщение далее!`;
-          inlineSlots = [[{ text: '✨ Продолжить запись', callback_data: 'select_slot_custom' }]];
-        }
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: slotsMsg,
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: inlineSlots },
-          }),
-        });
-
-        return NextResponse.json({ success: true });
-      }
-
-      // Выбор слота времени
-      if (callbackData.startsWith('select_slot_')) {
-        const slotId = callbackData.replace('select_slot_', '');
-        const session = userSessions[userId] || {};
-        session.slot_id = slotId;
-        session.step = 'awaiting_child_data';
-        userSessions[userId] = session;
-
-        const promptChildMsg = `👶 *ШАГ 3: УКАЖИТЕ ДАННЫЕ РЕБЁНКА*\n\n` +
-          `Напишите в ответном сообщении *Имя* и *Класс / Возраст* ребёнка.\n` +
-          `(Например: \`Артём, Подготовка к школе\` или \`София, 3 класс\`):`;
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: promptChildMsg,
-            parse_mode: 'Markdown',
-          }),
-        });
-
-        return NextResponse.json({ success: true });
-      }
-
-      // Запуск записи через инлайн кнопку
-      if (callbackData === 'start_booking') {
-        userSessions[userId] = { step: 'awaiting_service' };
-
-        let servicesMsg = `🎯 *ВЫБЕРИТЕ НАПРАВЛЕНИЕ ОБУЧЕНИЯ*\n\n`;
-        SERVICES.forEach((s, idx) => {
-          servicesMsg += `*${idx + 1}. ${s.title}*\n` +
-            `⏱ ${s.duration_minutes} мин • 💰 *${s.price} ₽*\n` +
-            `📖 ${s.description}\n\n`;
-        });
-
-        const inlineServices = {
-          inline_keyboard: SERVICES.map((s, i) => [
-            { text: `👉 ${s.title} (${s.price} ₽)`, callback_data: `select_service_${i}` },
-          ]),
-        };
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: servicesMsg,
-            parse_mode: 'Markdown',
-            reply_markup: inlineServices,
-          }),
-        });
-
-        return NextResponse.json({ success: true });
-      }
-
-      // Кабинет инлайн
-      if (callbackData === 'native_cabinet') {
-        const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '';
-        const firstName = callbackQuery.from?.first_name || 'Гость';
-
-        let query = supabase.from('bookings').select('*').order('created_at', { ascending: false });
-        if (username) {
-          query = query.ilike('telegram_handle', username);
-        }
-
-        const { data: bookings } = await query.limit(5);
-
-        let cabMsg = `👤 *ЛИЧНЫЙ КАБИНЕТ РОДИТЕЛЯ*\n` +
-          `Telegram: ${username || firstName}\n\n`;
-
-        if (!bookings || bookings.length === 0) {
-          cabMsg += `У вас пока нет активных записей.\n` +
-            `Нажмите кнопку *«📅 1) Записаться на урок»* ниже!`;
-        } else {
-          cabMsg += `📋 *Ваши последние записи:*\n\n`;
-          bookings.forEach((b: any, i: number) => {
-            const statusStr = b.status === 'confirmed' ? '✅ Подтверждена' :
-              b.status === 'pending_payment' ? '⏳ Ожидает оплаты' :
-              b.status === 'receipt_uploaded' ? '📑 Чек на проверке' : b.status;
-            cabMsg += `*${i + 1}. ${b.service_title}*\n` +
-              `👶 Ученик: ${b.child_name}\n` +
-              `📌 Статус: *${statusStr}*\n` +
-              `💰 Сумма: ${b.price} ₽\n\n`;
-          });
-        }
-
-        const inlineKb = {
-          inline_keyboard: [
-            [{ text: '📅 Записаться на урок', callback_data: 'start_booking' }],
-            [{ text: '🌐 Открыть веб-кабинет в Mini App', web_app: { url: `${baseUrl}/my-dashboard` } }],
-          ],
-        };
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: cabMsg,
-            parse_mode: 'Markdown',
-            reply_markup: inlineKb,
-          }),
-        });
-
-        return NextResponse.json({ success: true });
-      }
-
-      // Реквизиты инлайн
-      if (callbackData === 'payment_info') {
-        const { data: settings } = await supabase.from('settings').select('*').limit(1);
-        const set = settings && settings[0] ? settings[0] : null;
-
-        const phone = set?.phone || '+7 (937) 214-42-05';
-        const cardNumber = set?.card_number || '2202 2024 1122 3344';
-        const bankName = set?.bank_name || 'Сбербанк / Т-Банк (СБП)';
-        const recipient = set?.recipient || 'Скокова Юлия Павловна';
-
-        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n` +
-          `📱 *Телефон СБП:* \`${phone}\`\n` +
-          `💳 *Карта:* \`${cardNumber}\`\n` +
-          `🏦 *Банк:* ${bankName}\n` +
-          `👤 *Получатель:* ${recipient}\n\n` +
-          `📸 *Отправьте фото/скриншот чека прямо в этот чат после перевода!*`;
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: payMsg,
-            parse_mode: 'Markdown',
-          }),
-        });
-
-        return NextResponse.json({ success: true });
-      }
 
       // Подтверждение или отмена педагогом
       const [action, bookingId] = callbackData.split('_');
