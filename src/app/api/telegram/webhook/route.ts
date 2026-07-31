@@ -397,7 +397,7 @@ export async function POST(req: Request) {
 
         const contactInlineKb = {
           inline_keyboard: [
-            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+            [{ text: '💬 Написать в Telegram', url: 'tg://openmessage?user_id=510510041' }],
           ],
         };
 
@@ -766,7 +766,7 @@ export async function POST(req: Request) {
 
         const contactInlineKb = {
           inline_keyboard: [
-            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+            [{ text: '💬 Написать в Telegram', url: 'tg://openmessage?user_id=510510041' }],
           ],
         };
 
@@ -882,7 +882,7 @@ export async function POST(req: Request) {
 
         const contactInlineKb = {
           inline_keyboard: [
-            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+            [{ text: '💬 Написать в Telegram', url: 'tg://openmessage?user_id=510510041' }],
           ],
         };
 
@@ -910,7 +910,7 @@ export async function POST(req: Request) {
 
         const contactInlineKb = {
           inline_keyboard: [
-            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+            [{ text: '💬 Написать в Telegram', url: 'tg://openmessage?user_id=510510041' }],
           ],
         };
 

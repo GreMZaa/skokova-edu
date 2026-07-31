@@ -8,7 +8,7 @@ export const Footer: React.FC = () => {
   const handleTelegramClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     // Пробуем открыть напрямую в установленном приложении Telegram (без блока .me)
     try {
-      window.location.href = 'tg://resolve?domain=id510510041';
+      window.location.href = 'tg://user?id=510510041';
     } catch (err) {
       console.log('Native Telegram app link fallback');
     }
@@ -28,7 +28,7 @@ export const Footer: React.FC = () => {
 
           <div className="md:col-span-6 flex flex-wrap items-center justify-center md:justify-end gap-3 sm:gap-4">
             <a
-              href="https://t.me/id510510041"
+              href="tg://user?id=510510041"
               target="_blank"
               rel="noreferrer"
               onClick={handleTelegramClick}
