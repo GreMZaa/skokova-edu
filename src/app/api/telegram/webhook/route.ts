@@ -42,6 +42,27 @@ async function getRequisites(supabase: any) {
   return { phone, cardNumber, bankName, recipient };
 }
 
+async function ensureTelegramIdInAuth(supabase: any, userId: string, telegramId: number, username?: string) {
+  if (!userId || !telegramId) return;
+  try {
+    const { data: uRes } = await supabase.auth.admin.getUserById(userId);
+    if (uRes?.user) {
+      const metadata = uRes.user.user_metadata || {};
+      if (metadata.telegram_id !== telegramId || (username && metadata.telegram_handle !== username)) {
+        await supabase.auth.admin.updateUserById(userId, {
+          user_metadata: {
+            ...metadata,
+            telegram_id: telegramId,
+            telegram_handle: username || metadata.telegram_handle,
+          },
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Error in ensureTelegramIdInAuth:', e);
+  }
+}
+
 async function getOrCreateUserProfile(
   supabase: any,
   params: {
@@ -75,6 +96,7 @@ async function getOrCreateUserProfile(
         updated_at: new Date().toISOString(),
       }).eq('id', existingByHandle.id);
 
+      if (telegramId) await ensureTelegramIdInAuth(supabase, existingByHandle.id, telegramId, username);
       return existingByHandle.id;
     }
   }
@@ -94,6 +116,7 @@ async function getOrCreateUserProfile(
         updated_at: new Date().toISOString(),
       }).eq('id', existingByPhone.id);
 
+      if (telegramId) await ensureTelegramIdInAuth(supabase, existingByPhone.id, telegramId, username);
       return existingByPhone.id;
     }
 
@@ -115,6 +138,7 @@ async function getOrCreateUserProfile(
         updated_at: new Date().toISOString(),
       });
 
+      if (telegramId) await ensureTelegramIdInAuth(supabase, matchedBooking.user_id, telegramId, username);
       return matchedBooking.user_id;
     }
   }
@@ -134,6 +158,7 @@ async function getOrCreateUserProfile(
       updated_at: new Date().toISOString(),
     });
 
+    if (telegramId) await ensureTelegramIdInAuth(supabase, existingAuthUser.id, telegramId, username);
     return existingAuthUser.id;
   }
 
@@ -245,7 +270,7 @@ async function sendAndTrackMessage(
   payload: any,
   session: any
 ) {
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  let res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -254,7 +279,22 @@ async function sendAndTrackMessage(
     }),
   });
 
-  const json = await res.json();
+  let json = await res.json();
+
+  if (!json.ok && payload.parse_mode) {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.parse_mode;
+    res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        ...fallbackPayload,
+      }),
+    });
+    json = await res.json();
+  }
+
   if (json.ok && json.result?.message_id) {
     if (!session.last_message_ids) session.last_message_ids = [];
     if (!session.last_message_ids.includes(json.result.message_id)) {
@@ -617,7 +657,7 @@ async function renderContactScreen(botToken: string, chatId: number, session: an
 async function findParentTelegramId(supabase: any, bookingObj: any): Promise<number | null> {
   if (!bookingObj) return null;
 
-  // 1. Поиск из Auth user_metadata по user_id
+  // 1. Поиск по bookingObj.user_id в Supabase Auth
   if (bookingObj.user_id) {
     try {
       const { data: uRes } = await supabase.auth.admin.getUserById(bookingObj.user_id);
@@ -632,34 +672,65 @@ async function findParentTelegramId(supabase: any, bookingObj: any): Promise<num
     } catch (e) {}
   }
 
-  // 2. Поиск по telegram_handle в списке зарегистрированных Auth пользователей
+  // Получаем список всех пользователей Auth для сквозного поиска
+  let authUsers: any[] = [];
+  try {
+    const { data: authList } = await supabase.auth.admin.listUsers();
+    authUsers = authList?.users || [];
+  } catch (e) {}
+
+  // 2. Поиск по telegram_handle в Auth и Profiles
   if (bookingObj.telegram_handle) {
-    try {
-      const cleanHandle = bookingObj.telegram_handle.replace('@', '').toLowerCase();
-      const { data: authList } = await supabase.auth.admin.listUsers();
-      const matchedUser = authList?.users?.find((u: any) => {
-        const h = u.user_metadata?.telegram_handle;
-        return h && h.replace('@', '').toLowerCase() === cleanHandle;
-      });
+    const cleanHandle = bookingObj.telegram_handle.replace('@', '').toLowerCase();
 
-      if (matchedUser?.user_metadata?.telegram_id) {
-        return Number(matchedUser.user_metadata.telegram_id);
+    for (const u of authUsers) {
+      const metaHandle = (u.user_metadata?.telegram_handle || '').replace('@', '').toLowerCase();
+      if (metaHandle && metaHandle === cleanHandle) {
+        if (u.user_metadata?.telegram_id) return Number(u.user_metadata.telegram_id);
+        if (u.email?.startsWith('tg_')) {
+          const match = u.email.match(/tg_(\d+)@/);
+          if (match) return Number(match[1]);
+        }
       }
+    }
 
-      if (matchedUser?.email?.startsWith('tg_')) {
-        const match = matchedUser.email.match(/tg_(\d+)@/);
-        if (match) return Number(match[1]);
+    try {
+      const { data: allProfiles } = await supabase.from('profiles').select('*');
+      const matchedProfile = allProfiles?.find((p: any) =>
+        p.telegram_handle && p.telegram_handle.replace('@', '').toLowerCase() === cleanHandle
+      );
+
+      if (matchedProfile?.id) {
+        const { data: uRes } = await supabase.auth.admin.getUserById(matchedProfile.id);
+        const tgId = uRes?.user?.user_metadata?.telegram_id;
+        if (tgId) return Number(tgId);
+        const email = uRes?.user?.email || '';
+        if (email.startsWith('tg_')) {
+          const match = email.match(/tg_(\d+)@/);
+          if (match) return Number(match[1]);
+        }
       }
     } catch (e) {}
   }
 
   // 3. Поиск по номеру телефона
   if (bookingObj.phone) {
-    try {
-      const cleanPhoneDigits = bookingObj.phone.replace(/\D/g, '');
-      const last10 = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
+    const cleanPhoneDigits = bookingObj.phone.replace(/\D/g, '');
+    const last10 = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
 
-      if (last10) {
+    if (last10) {
+      for (const u of authUsers) {
+        const uPhone = (u.user_metadata?.phone || u.phone || '').replace(/\D/g, '');
+        if (uPhone && uPhone.endsWith(last10)) {
+          if (u.user_metadata?.telegram_id) return Number(u.user_metadata.telegram_id);
+          if (u.email?.startsWith('tg_')) {
+            const match = u.email.match(/tg_(\d+)@/);
+            if (match) return Number(match[1]);
+          }
+        }
+      }
+
+      try {
         const { data: allProfiles } = await supabase.from('profiles').select('*');
         const matchedProfile = allProfiles?.find((p: any) => p.phone && p.phone.replace(/\D/g, '').endsWith(last10));
 
@@ -674,8 +745,23 @@ async function findParentTelegramId(supabase: any, bookingObj: any): Promise<num
             if (match) return Number(match[1]);
           }
         }
+      } catch (e) {}
+    }
+  }
+
+  // 4. Поиск по имени родителя в Auth
+  if (bookingObj.parent_name) {
+    const pNameLower = bookingObj.parent_name.toLowerCase();
+    for (const u of authUsers) {
+      const uName = (u.user_metadata?.full_name || u.user_metadata?.name || '').toLowerCase();
+      if (uName && (uName.includes(pNameLower) || pNameLower.includes(uName))) {
+        if (u.user_metadata?.telegram_id) return Number(u.user_metadata.telegram_id);
+        if (u.email?.startsWith('tg_')) {
+          const match = u.email.match(/tg_(\d+)@/);
+          if (match) return Number(match[1]);
+        }
       }
-    } catch (e) {}
+    }
   }
 
   return null;
