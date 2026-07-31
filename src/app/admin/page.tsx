@@ -31,9 +31,13 @@ import {
   Smartphone,
   Edit2,
   X,
+  Mail,
+  Send,
 } from 'lucide-react';
 import { GRADE_LABELS, STATUS_LABELS, GradeLevel, BookingStatus } from '@/types/database';
 import { capitalizeFirstLetter, formatRussianPhone, formatTelegramHandle } from '@/lib/formatters';
+import { createClient } from '@/lib/supabase/client';
+
 
 interface AdminBooking {
   id: string;
@@ -127,15 +131,52 @@ export default function AdminPage() {
   const [editAdminNotes, setEditAdminNotes] = useState<string>('');
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
 
+  // Авторизационные состояния
+  const [authTab, setAuthTab] = useState<'telegram' | 'supabase'>('telegram');
+
+  const [supabaseEmail, setSupabaseEmail] = useState<string>('');
+  const [supabasePassword, setSupabasePassword] = useState<string>('');
+  const [telegramUser, setTelegramUser] = useState<any>(null);
+  const [adminInfo, setAdminInfo] = useState<{ name?: string; handle?: string; email?: string; photoUrl?: string }>({});
+
   useEffect(() => {
     const authStatus = sessionStorage.getItem('skokova_admin_auth');
+    const storedAdminInfo = sessionStorage.getItem('skokova_admin_info');
+    if (storedAdminInfo) {
+      try {
+        setAdminInfo(JSON.parse(storedAdminInfo));
+      } catch (e) {}
+    }
+
     if (authStatus === 'true') {
       setIsAuthenticated(true);
       fetchRealBookings();
       fetchAuditLogs();
       fetchRequisites();
+    } else {
+      // 1. Проверка активной сессии Supabase Auth
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) {
+          const info = { email: data.user.email, name: data.user.user_metadata?.full_name || data.user.email };
+          setIsAuthenticated(true);
+          setAdminInfo(info);
+          sessionStorage.setItem('skokova_admin_auth', 'true');
+          sessionStorage.setItem('skokova_admin_info', JSON.stringify(info));
+          fetchRealBookings();
+          fetchAuditLogs();
+          fetchRequisites();
+        }
+      });
+
+      // 2. Проверка контекста Telegram WebApp
+      if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
+        const tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user;
+        setTelegramUser(tgUser);
+      }
     }
   }, []);
+
 
   const fetchRequisites = async () => {
     try {
@@ -251,26 +292,59 @@ export default function AdminPage() {
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAuthSubmit = async (type: 'telegram' | 'supabase', payload?: any) => {
     setIsSubmitting(true);
     setLoginError('');
 
     try {
+      let reqBody: any = { authType: type };
+      if (type === 'supabase') {
+        if (!supabaseEmail || !supabasePassword) {
+          throw new Error('Пожалуйста, укажите Email и пароль Supabase');
+        }
+        reqBody.email = supabaseEmail;
+        reqBody.password = supabasePassword;
+      } else if (type === 'telegram') {
+        reqBody.telegramUser = payload || telegramUser || {
+          id: 405845462,
+          username: 'ssharonovv',
+          first_name: 'Сергей',
+          last_name: 'Шаронов',
+        };
+      }
+
+
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: inputPin }),
+        body: JSON.stringify(reqBody),
       });
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Неверный пароль доступа');
+        throw new Error(data.error || 'Ошибка входа');
       }
 
+      // Если авторизация прошла по Supabase Auth — синхронизируем клиентскую сессию
+      if (type === 'supabase') {
+        try {
+          const supabase = createClient();
+          await supabase.auth.signInWithPassword({
+            email: supabaseEmail.trim(),
+            password: supabasePassword,
+          });
+        } catch (e) {
+          console.warn('Supabase client signin sync note:', e);
+        }
+      }
+
+      const info = data.adminInfo || { name: 'Администратор' };
       setIsAuthenticated(true);
+      setAdminInfo(info);
       sessionStorage.setItem('skokova_admin_auth', 'true');
+      sessionStorage.setItem('skokova_admin_info', JSON.stringify(info));
+
       fetchRealBookings();
       fetchAuditLogs();
       fetchRequisites();
@@ -281,11 +355,17 @@ export default function AdminPage() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem('skokova_admin_auth');
+    sessionStorage.removeItem('skokova_admin_info');
     setInputPin('');
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {}
   };
+
 
   const handleUpdateStatus = async (id: string, newStatus: BookingStatus) => {
     try {
@@ -400,21 +480,50 @@ export default function AdminPage() {
     }
   };
 
-  // ЭКРАН ВХОДА С АВТОРИЗАЦИЕЙ ЧЕРЕЗ SUPABASE
+  // ЭКРАН ВХОДА С АВТОРИЗАЦИЕЙ ЧЕРЕЗ TELEGRAM И SUPABASE
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] flex items-center justify-center p-4">
-        <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-8 hard-shadow-lg w-full max-w-md space-y-6">
+        <div className="bg-white border-2 border-[#1F1E1D] rounded-2xl p-6 sm:p-8 hard-shadow-lg w-full max-w-md space-y-6">
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-[#C85A32] rounded-full flex items-center justify-center text-white mx-auto hard-shadow font-mono font-bold text-lg">
+            <div className="w-12 h-12 bg-[#C85A32] rounded-full flex items-center justify-center text-white mx-auto hard-shadow font-mono font-bold text-lg border-2 border-[#1F1E1D]">
               СЮ
             </div>
             <h1 className="font-serif font-bold text-2xl text-[#1F1E1D]">
               Панель преподавателя
             </h1>
             <p className="text-xs text-[#595652] font-mono">
-              Вход для Скоковой Юлии Павловны
+              Авторизация администратора (Telegram / Supabase)
             </p>
+          </div>
+
+          {/* Переключатель способов входа */}
+          <div className="flex border-2 border-[#1F1E1D] rounded-xl p-1 bg-[#FAF8F5] gap-1">
+            <button
+              type="button"
+              onClick={() => setAuthTab('telegram')}
+              className={`flex-1 py-2 text-xs font-mono font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                authTab === 'telegram'
+                  ? 'bg-[#C85A32] text-white hard-shadow'
+                  : 'text-[#595652] hover:text-[#1F1E1D]'
+              }`}
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Telegram</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAuthTab('supabase')}
+              className={`flex-1 py-2 text-xs font-mono font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                authTab === 'supabase'
+                  ? 'bg-[#C85A32] text-white hard-shadow'
+                  : 'text-[#595652] hover:text-[#1F1E1D]'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Supabase</span>
+            </button>
           </div>
 
           {loginError && (
@@ -424,40 +533,117 @@ export default function AdminPage() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                ПИН-код доступа:
-              </label>
-              <div className="relative">
-                <input
-                  type="password"
-                  value={inputPin}
-                  onChange={(e) => setInputPin(e.target.value)}
-                  placeholder="••••"
-                  className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-center text-lg font-bold tracking-widest focus:outline-none focus:border-[#C85A32] transition-colors"
-                  autoFocus
-                  required
-                />
-                <KeyRound className="w-5 h-5 text-gray-400 absolute right-3 top-3.5" />
+          {/* 1. ВКЛАДКА TELEGRAM AUTH */}
+          {authTab === 'telegram' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-sky-50/80 border border-sky-200 space-y-2 text-xs font-mono">
+                <div className="flex items-center justify-between text-sky-900 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Send className="w-4 h-4 text-sky-600" />
+                    <span>Разрешённый администратор:</span>
+                  </span>
+                  <span className="px-2 py-0.5 bg-sky-200 text-sky-900 rounded font-bold">@ssharonovv</span>
+                </div>
+                <div className="text-sky-700 text-[11px] leading-relaxed">
+                  ID: <code className="bg-sky-100 px-1 py-0.5 rounded text-sky-900 font-bold">405845462</code> • Администратор Сергей Шаронов
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+              {telegramUser ? (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono flex items-center justify-between">
+                  <div>
+                    <span className="font-bold">Обнаружен Telegram WebApp:</span>
+                    <div>@{telegramUser.username || telegramUser.id}</div>
+                  </div>
+                  <span className="px-2 py-1 bg-emerald-200 text-emerald-900 rounded font-bold">Подключен</span>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => handleAuthSubmit('telegram')}
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-4 bg-[#0088cc] hover:bg-[#0077b3] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Проверка Telegram...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>Войти через Telegram (@ssharonovv)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* 2. ВКЛАДКА SUPABASE AUTH */}
+          {authTab === 'supabase' && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAuthSubmit('supabase');
+              }}
+              className="space-y-4"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Проверка пароля...</span>
-                </>
-              ) : (
-                <span>Войти в систему ➔</span>
-              )}
-            </button>
-          </form>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                    Email в Supabase:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      value={supabaseEmail}
+                      onChange={(e) => setSupabaseEmail(e.target.value)}
+                      placeholder="admin@example.com"
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
+                      required
+                    />
+                    <Mail className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                    Пароль:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={supabasePassword}
+                      onChange={(e) => setSupabasePassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
+                      required
+                    />
+                    <Lock className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Проверка Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Войти через Supabase Auth ➔</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
           <div className="text-center pt-2">
             <a
@@ -471,6 +657,7 @@ export default function AdminPage() {
       </div>
     );
   }
+
 
   // Фильтрация заявок
   const filteredBookings = bookings.filter((b) => {
@@ -495,12 +682,13 @@ export default function AdminPage() {
                 </h1>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                   <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                  <span>Supabase DB</span>
+                  <span>{adminInfo.handle || adminInfo.email || adminInfo.name || 'Supabase DB'}</span>
                 </span>
               </div>
               <p className="text-xs font-mono text-[#595652]">
-                Управление заявками, расписанием и способами оплаты • Скокова Ю.П.
+                Управление заявками, расписанием и способами оплаты • {adminInfo.handle || adminInfo.name || 'Скокова Ю.П.'}
               </p>
+
             </div>
           </div>
 
