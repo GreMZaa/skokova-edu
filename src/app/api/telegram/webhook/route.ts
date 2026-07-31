@@ -32,6 +32,80 @@ async function getRequisites(supabase: any) {
   return { phone, cardNumber, bankName, recipient };
 }
 
+async function getOrCreateUserProfile(
+  supabase: any,
+  params: {
+    telegramId: number;
+    firstName: string;
+    username?: string;
+    phone?: string;
+    fullName?: string;
+  }
+) {
+  const { telegramId, firstName, username, phone, fullName } = params;
+  const parentName = fullName || firstName || 'Родитель';
+  const email = `tg_${telegramId}@skokova-edu.ru`;
+  const password = `Tg_${telegramId}!`;
+
+  // 1. Поиск существующего профиля в `profiles`
+  let query = supabase.from('profiles').select('id');
+  if (username) {
+    query = query.ilike('telegram_handle', username);
+  } else if (phone) {
+    query = query.eq('phone', phone);
+  }
+
+  const { data: existingProfile } = await query.maybeSingle();
+
+  if (existingProfile) {
+    await supabase.from('profiles').update({
+      full_name: parentName,
+      phone: phone || undefined,
+      telegram_handle: username || undefined,
+      updated_at: new Date().toISOString(),
+    }).eq('id', existingProfile.id);
+
+    return existingProfile.id;
+  }
+
+  // 2. Если профиля нет — создаем пользователя в Supabase Auth
+  let parentUserId = '';
+  const { data: authUserData, error: authErr } = await supabase.auth.admin.createUser({
+    email: email,
+    password: password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: parentName,
+      telegram_handle: username,
+      telegram_id: telegramId,
+    },
+  });
+
+  if (authUserData?.user) {
+    parentUserId = authUserData.user.id;
+  } else {
+    // Если пользователь с таким email уже был создан ранее в Auth
+    const { data: authList } = await supabase.auth.admin.listUsers();
+    const foundUser = authList?.users?.find(
+      (u: any) => u.email === email || u.user_metadata?.telegram_id === telegramId
+    );
+    if (foundUser) {
+      parentUserId = foundUser.id;
+    }
+  }
+
+  if (parentUserId) {
+    await supabase.from('profiles').upsert({
+      id: parentUserId,
+      full_name: parentName,
+      phone: phone || '',
+      telegram_handle: username || null,
+    });
+  }
+
+  return parentUserId;
+}
+
 // Временное хранилище шагов диалога (Session state for Telegram users)
 const userSessions: Record<number, {
   step?: string;
@@ -212,13 +286,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Команда /start
+      // Команда /start -> Сразу создаем Личный кабинет в Supabase
       if (text.startsWith('/start')) {
         delete userSessions[userId];
 
+        // Автоматически создаем пользователя в Supabase Auth и таблицу profiles при первом входе /start
+        await getOrCreateUserProfile(supabase, {
+          telegramId: userId,
+          firstName: firstName,
+          username: username,
+        });
+
         const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
           `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
-          `✨ *Все возможности доступны прямо в меню ниже:*\n` +
+          `✨ *Ваш Личный кабинет создан! Все возможности доступны ниже:*\n` +
           `• 📅 Запись на уроки и выбор времени\n` +
           `• 👤 Кабинет родителя и история занятий\n` +
           `• 📚 Программы, тарифы и реквизиты СБП\n\n` +
@@ -448,55 +529,14 @@ export async function POST(req: Request) {
         const rawGrade = session.child_grade || '';
         const mappedGrade = mapChildGradeToEnum(rawGrade);
 
-        // 1. Автоматическое создание/поиск аккаунта в Supabase Auth и таблице `profiles`
-        let parentUserId = '';
-        let profileQuery = supabase.from('profiles').select('id');
-
-        if (username) {
-          profileQuery = profileQuery.ilike('telegram_handle', username);
-        } else if (phone) {
-          profileQuery = profileQuery.eq('phone', phone);
-        }
-
-        const { data: existingProfile } = await profileQuery.maybeSingle();
-
-        if (existingProfile) {
-          parentUserId = existingProfile.id;
-          await supabase.from('profiles').update({
-            full_name: parentNameOnly,
-            phone: phone,
-            telegram_handle: username || undefined,
-            updated_at: new Date().toISOString(),
-          }).eq('id', parentUserId);
-        } else {
-          const cleanPhone = phone.replace(/\D/g, '');
-          const dummyEmail = `tg_${cleanPhone || Date.now()}@skokova-edu.ru`;
-          const dummyPassword = `Tg_${cleanPhone || Date.now()}!`;
-
-          const { data: authUserData, error: authErr } = await supabase.auth.admin.createUser({
-            email: dummyEmail,
-            password: dummyPassword,
-            email_confirm: true,
-            user_metadata: {
-              full_name: parentNameOnly,
-              telegram_handle: username,
-            },
-          });
-
-          if (authErr) {
-            console.error('Supabase Auth user creation error:', authErr);
-          }
-
-          if (authUserData?.user) {
-            parentUserId = authUserData.user.id;
-            await supabase.from('profiles').upsert({
-              id: parentUserId,
-              full_name: parentNameOnly,
-              phone: phone,
-              telegram_handle: username || null,
-            });
-          }
-        }
+        // 1. Автоматическое обновление/создание профиля родителя в Supabase Auth и таблице `profiles`
+        const parentUserId = await getOrCreateUserProfile(supabase, {
+          telegramId: userId,
+          firstName: firstName,
+          username: username,
+          phone: phone,
+          fullName: parentNameOnly,
+        });
 
         // 2. Автоматическое создание/привязка ребёнка в таблице `children`
         if (childNameOnly) {
