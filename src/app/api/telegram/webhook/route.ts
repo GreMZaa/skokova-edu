@@ -261,6 +261,9 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
     inline_keyboard.push(navRow);
   }
 
+  // Кнопка возврата в главное меню
+  inline_keyboard.push([{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]);
+
   return { inline_keyboard, totalSlots: validSlots.length, currentPage, totalPages };
 }
 
@@ -325,7 +328,8 @@ export async function POST(req: Request) {
     // Прямая инлайн-кнопка для связи с Юлией Павловной
     const yuliaContactInlineKb = {
       inline_keyboard: [
-        [{ text: '💬 Написать в Telegram', url: 'https://t.me/+79608374706' }],
+        [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
+        [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
       ],
     };
 
@@ -453,7 +457,6 @@ export async function POST(req: Request) {
         text.includes('Педагог') || text.includes('Связаться');
 
       if (isMenuCommand) {
-        // Очищаем активный шаг записи
         await clearUserSession(supabase, parentUserId);
         session = {};
       }
@@ -515,6 +518,7 @@ export async function POST(req: Request) {
           inline_keyboard: [
             [{ text: '👉 Онлайн-занятие (600 ₽)', callback_data: 'service_online' }],
             [{ text: '👉 Оффлайн-занятие (800 ₽)', callback_data: 'service_offline' }],
+            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
           ],
         };
 
@@ -547,6 +551,13 @@ export async function POST(req: Request) {
         programsMsg += `💡 *Тарифы:* Онлайн-урок — *600 ₽* / 40 мин, Оффлайн — *800 ₽* / 40 мин.\n\n` +
           `Для записи нажмите кнопку *«📅 Записаться на урок»* в меню ниже.`;
 
+        const programsInlineKb = {
+          inline_keyboard: [
+            [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
+          ],
+        };
+
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -554,7 +565,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: programsMsg,
             parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
+            reply_markup: programsInlineKb,
           }),
         });
 
@@ -618,6 +629,7 @@ export async function POST(req: Request) {
             [{ text: '📋 История заказов', callback_data: 'show_history' }],
             [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
             [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
+            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
           ],
         };
 
@@ -852,7 +864,6 @@ export async function POST(req: Request) {
         const rawGrade = session.child_grade || '';
         const mappedGrade = mapChildGradeToEnum(rawGrade);
 
-        // 1. Автоматическое обновление профиля родителя в Supabase Auth и таблице `profiles`
         await getOrCreateUserProfile(supabase, {
           telegramId: userId,
           firstName: firstName,
@@ -861,7 +872,6 @@ export async function POST(req: Request) {
           fullName: parentNameOnly,
         });
 
-        // 2. Автоматическое создание/привязка ребёнка в таблице `children`
         if (childNameOnly && parentUserId) {
           const { data: existingChild } = await supabase
             .from('children')
@@ -879,7 +889,6 @@ export async function POST(req: Request) {
           }
         }
 
-        // 3. Создаем запись бронирования с привязанным user_id родителя
         const { data: newBooking, error: dbError } = await supabase
           .from('bookings')
           .insert({
@@ -903,10 +912,8 @@ export async function POST(req: Request) {
           console.error('Supabase booking insert error:', dbError);
         }
 
-        // Очищаем сессию диалога
         await clearUserSession(supabase, parentUserId);
 
-        // Получаем реквизиты из базы данных Supabase
         const reqs = await getRequisites(supabase);
 
         let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
@@ -975,6 +982,25 @@ export async function POST(req: Request) {
 
       let session = await getUserSession(supabase, parentUserId);
 
+      // Клик по "⬅️ Назад в главное меню"
+      if (callbackData === 'go_main_menu') {
+        await clearUserSession(supabase, parentUserId);
+
+        const welcomeText = `👌 Вы вернулись в главное меню. Выберите нужный раздел:`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: welcomeText,
+            reply_markup: mainReplyKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
       // Клик по вызову истории заказов из кабинета
       if (callbackData === 'show_history') {
         const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '';
@@ -1040,6 +1066,7 @@ export async function POST(req: Request) {
           inline_keyboard: [
             [{ text: '📅 Записаться на новый урок', callback_data: 'service_online' }],
             [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
+            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
           ],
         };
 
