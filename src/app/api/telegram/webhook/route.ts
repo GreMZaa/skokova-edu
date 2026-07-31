@@ -607,6 +607,48 @@ async function renderContactScreen(botToken: string, chatId: number, session: an
   await editOrSendMessage(botToken, chatId, messageId, contactMsg, yuliaContactInlineKb, session, true);
 }
 
+async function findParentTelegramId(supabase: any, bookingObj: any): Promise<number | null> {
+  if (!bookingObj) return null;
+
+  // 1. Поиск из Auth user_metadata по user_id
+  if (bookingObj.user_id) {
+    try {
+      const { data: uRes } = await supabase.auth.admin.getUserById(bookingObj.user_id);
+      const tgId = uRes?.user?.user_metadata?.telegram_id;
+      if (tgId) return Number(tgId);
+
+      const email = uRes?.user?.email || '';
+      if (email.startsWith('tg_')) {
+        const match = email.match(/tg_(\d+)@/);
+        if (match) return Number(match[1]);
+      }
+    } catch (e) {}
+  }
+
+  // 2. Поиск по telegram_handle в списке зарегистрированных Auth пользователей
+  if (bookingObj.telegram_handle) {
+    try {
+      const cleanHandle = bookingObj.telegram_handle.replace('@', '').toLowerCase();
+      const { data: authList } = await supabase.auth.admin.listUsers();
+      const matchedUser = authList?.users?.find((u: any) => {
+        const h = u.user_metadata?.telegram_handle;
+        return h && h.replace('@', '').toLowerCase() === cleanHandle;
+      });
+
+      if (matchedUser?.user_metadata?.telegram_id) {
+        return Number(matchedUser.user_metadata.telegram_id);
+      }
+
+      if (matchedUser?.email?.startsWith('tg_')) {
+        const match = matchedUser.email.match(/tg_(\d+)@/);
+        if (match) return Number(match[1]);
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
 // Вспомогательная функция завершения бронирования и отправки уведомления педагогу
 async function finalizeBooking(
   botToken: string,
@@ -617,8 +659,12 @@ async function finalizeBooking(
   session: any,
   phone: string,
   firstName: string,
-  username: string
+  username: string,
+  extraMsgIdToDelete?: number
 ) {
+  // Чистим все старые сообщения и карточки выбора перед отправкой подтверждения
+  await cleanupPreviousMessages(botToken, chatId, session, extraMsgIdToDelete);
+
   const parentNameOnly = session.parent_name || firstName;
   const childNameOnly = session.child_name || 'Ученик';
   const rawGrade = session.child_grade || '';
@@ -1365,7 +1411,8 @@ export async function POST(req: Request) {
             session,
             parentPhone,
             callbackQuery.from?.first_name || 'Родитель',
-            callbackQuery.from?.username ? `@${callbackQuery.from.username}` : ''
+            callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '',
+            messageId
           );
           return NextResponse.json({ success: true });
         }
@@ -1493,44 +1540,47 @@ export async function POST(req: Request) {
         }
 
         // УВЕДОМЛЯЕМ РОДИТЕЛЯ В ЕГО ЛИЧНЫЙ ТЕЛЕГРАМ-ЧАТ
-        if (bookingObj?.user_id) {
+        const parentTgId = await findParentTelegramId(supabase, bookingObj);
+
+        if (parentTgId) {
           try {
-            const { data: parentUser } = await supabase.auth.admin.getUserById(bookingObj.user_id);
-            const parentTgId = parentUser?.user?.user_metadata?.telegram_id;
+            let slotTimeStr = 'Согласованное время';
+            if (bookingObj?.time_slots?.start_time) {
+              slotTimeStr = new Date(bookingObj.time_slots.start_time).toLocaleString('ru-RU', {
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Europe/Samara',
+              });
+            } else if (bookingObj?.comment && bookingObj.comment.includes('Время:')) {
+              const m = bookingObj.comment.match(/Время:\s*([^.]+)/);
+              if (m) slotTimeStr = m[1].trim();
+            }
 
-            if (parentTgId) {
-              let slotTimeStr = 'Согласованное время';
-              if (bookingObj.time_slots?.start_time) {
-                slotTimeStr = new Date(bookingObj.time_slots.start_time).toLocaleString('ru-RU', {
-                  day: 'numeric',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  timeZone: 'Europe/Samara',
-                });
-              } else if (bookingObj.comment && bookingObj.comment.includes('Время:')) {
-                const m = bookingObj.comment.match(/Время:\s*([^.]+)/);
-                if (m) slotTimeStr = m[1].trim();
-              }
+            const confirmNotifyParentText = `🎉 *ОПЛАТА И ЗАПИСЬ ПОДТВЕРЖДЕНЫ ПЕДАГОГОМ!*\n\n` +
+              `Скокова Юлия Павловна подтвердила зачисление оплаты за урок!\n\n` +
+              `📚 *Программа:* ${bookingObj?.service_title || 'Занятие'}\n` +
+              `⏱ *Время:* ${slotTimeStr}\n` +
+              `👶 *Ученик:* ${bookingObj?.child_name || 'Не указан'}\n` +
+              `💰 *Сумма:* ${bookingObj?.price || 600} ₽\n` +
+              `📌 *Статус:* ✅ Занятие подтверждено\n\n` +
+              `Юлия Павловна ждёт Вас на уроке! Вы можете отслеживать детали записи в разделе *«👤 Мой кабинет»*.`;
 
-              const confirmNotifyParentText = `🎉 *ОПЛАТА И ЗАПИСЬ ПОДТВЕРЖДЕНЫ ПЕДАГОГОМ!*\n\n` +
-                `Скокова Юлия Павловна подтвердила зачисление оплаты за урок!\n\n` +
-                `📚 *Программа:* ${bookingObj.service_title}\n` +
-                `⏱ *Время:* ${slotTimeStr}\n` +
-                `👶 *Ученик:* ${bookingObj.child_name || 'Не указан'}\n` +
-                `💰 *Сумма:* ${bookingObj.price} ₽\n` +
-                `📌 *Статус:* ✅ Занятие подтверждено\n\n` +
-                `Юлия Павловна ждёт Вас на уроке! Вы можете отслеживать детали записи в разделе *«👤 Мой кабинет»*.`;
+            let parentSession = {};
+            if (bookingObj?.user_id) {
+              parentSession = await getUserSession(supabase, bookingObj.user_id);
+            }
 
-              let parentSession = parentUser?.user?.user_metadata?.telegram_session || {};
-              await cleanupPreviousMessages(botToken, Number(parentTgId), parentSession);
+            await cleanupPreviousMessages(botToken, parentTgId, parentSession);
 
-              await sendAndTrackMessage(botToken, Number(parentTgId), {
-                text: confirmNotifyParentText,
-                parse_mode: 'Markdown',
-                reply_markup: mainInlineKeyboard,
-              }, parentSession);
+            await sendAndTrackMessage(botToken, parentTgId, {
+              text: confirmNotifyParentText,
+              parse_mode: 'Markdown',
+              reply_markup: mainInlineKeyboard,
+            }, parentSession);
 
+            if (bookingObj?.user_id) {
               await setUserSession(supabase, bookingObj.user_id, parentSession);
             }
           } catch (e) {
@@ -1592,25 +1642,28 @@ export async function POST(req: Request) {
         }
 
         // УВЕДОМЛЯЕМ РОДИТЕЛЯ В ЕГО ЛИЧНЫЙ ТЕЛЕГРАМ-ЧАТ
-        if (bookingObj?.user_id) {
+        const parentTgId = await findParentTelegramId(supabase, bookingObj);
+
+        if (parentTgId) {
           try {
-            const { data: parentUser } = await supabase.auth.admin.getUserById(bookingObj.user_id);
-            const parentTgId = parentUser?.user?.user_metadata?.telegram_id;
+            const rejectNotifyParentText = `⚠️ *ОПЛАТА ИЛИ ЗАПИСЬ ОТКЛОНЕНЫ*\n\n` +
+              `К сожалению, оплата по Вашей записи не была подтверждена.\n` +
+              `Вы можете связаться с Юлией Павловной в разделе *«💬 Связаться с педагогом»* для уточнения деталей.`;
 
-            if (parentTgId) {
-              const rejectNotifyParentText = `⚠️ *ОПЛАТА ИЛИ ЗАПИСЬ ОТКЛОНЕНЫ*\n\n` +
-                `К сожалению, оплата по Вашей записи не была подтверждена.\n` +
-                `Вы можете связаться с Юлией Павловной в разделе *«💬 Связаться с педагогом»* для уточнения деталей.`;
+            let parentSession = {};
+            if (bookingObj?.user_id) {
+              parentSession = await getUserSession(supabase, bookingObj.user_id);
+            }
 
-              let parentSession = parentUser?.user?.user_metadata?.telegram_session || {};
-              await cleanupPreviousMessages(botToken, Number(parentTgId), parentSession);
+            await cleanupPreviousMessages(botToken, parentTgId, parentSession);
 
-              await sendAndTrackMessage(botToken, Number(parentTgId), {
-                text: rejectNotifyParentText,
-                parse_mode: 'Markdown',
-                reply_markup: mainInlineKeyboard,
-              }, parentSession);
+            await sendAndTrackMessage(botToken, parentTgId, {
+              text: rejectNotifyParentText,
+              parse_mode: 'Markdown',
+              reply_markup: mainInlineKeyboard,
+            }, parentSession);
 
+            if (bookingObj?.user_id) {
               await setUserSession(supabase, bookingObj.user_id, parentSession);
             }
           } catch (e) {
