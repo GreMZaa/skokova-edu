@@ -54,7 +54,34 @@ export async function GET(req: Request) {
 
     const supabase = createAdminClient();
 
-    // 1. Получаем слоты из БД Supabase (исключаем забронированные и заблокированные на 15 минут, кроме слота пользователя)
+    // 1. Получаем все не отменённые записи
+    const { data: activeBookings } = await supabase
+      .from('bookings')
+      .select('slot_id, comment, time_slots!bookings_slot_id_fkey(start_time)')
+      .neq('status', 'cancelled');
+
+    const bookedSlotIds = new Set<string>();
+    const bookedDateTimes = new Set<string>();
+
+    (activeBookings || []).forEach((b: any) => {
+      if (b.slot_id) bookedSlotIds.add(b.slot_id);
+
+      let st = b.time_slots?.start_time;
+      if (st) {
+        const dateStr = new Date(st).toLocaleString('ru-RU', {
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: TOLYATTI_TZ,
+        });
+        bookedDateTimes.add(dateStr);
+      } else if (b.comment && b.comment.includes('Время:')) {
+        const m = b.comment.match(/Время:\s*([^.]+)/);
+        if (m) bookedDateTimes.add(m[1].trim());
+      }
+    });
+
     const nowIso = new Date().toISOString();
     let filterCondition = `locked_until.is.null,locked_until.lt.${nowIso}`;
     if (includeSlotId) {
@@ -64,10 +91,23 @@ export async function GET(req: Request) {
     let { data: dbSlots, error } = await supabase
       .from('time_slots')
       .select('*')
-      .eq('is_booked', false)
       .gte('start_time', nowIso)
       .or(filterCondition)
       .order('start_time', { ascending: true });
+
+    dbSlots = (dbSlots || []).filter((s: any) => {
+      if (includeSlotId && s.id === includeSlotId) return true;
+      if (s.is_booked || bookedSlotIds.has(s.id)) return false;
+      const dateStr = new Date(s.start_time).toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: TOLYATTI_TZ,
+      });
+      if (bookedDateTimes.has(dateStr)) return false;
+      return true;
+    });
 
     if (error) {
       console.error('Supabase slots query error:', error);
