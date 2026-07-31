@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 
+const sanitizeEnv = (val?: string) => (val || '').replace(/["'\r\n]/g, '').trim();
+
 export async function POST(req: Request) {
   try {
     const update = await req.json();
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
-    if (!botToken) {
-      return NextResponse.json({ success: true, message: 'No TELEGRAM_BOT_TOKEN configured' });
+    let botToken = sanitizeEnv(process.env.TELEGRAM_BOT_TOKEN);
+    if (!botToken || botToken.length < 20) {
+      botToken = '8656501308:AAFDzAuFznqhjRgWd35p-NvUa_hg1pwhoqM';
     }
 
     // Обработка текстовой команды /start
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
         ],
       };
 
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -46,7 +47,10 @@ export async function POST(req: Request) {
         }),
       });
 
-      return NextResponse.json({ success: true });
+      const tgJson = await tgRes.json();
+      console.log('Telegram sendMessage result:', tgJson);
+
+      return NextResponse.json({ success: true, tgResult: tgJson });
     }
 
     // Обработка клика по интерактивным кнопкам (Callback Queries)
