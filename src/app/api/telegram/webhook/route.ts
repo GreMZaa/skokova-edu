@@ -13,23 +13,24 @@ export async function POST(req: Request) {
     // Обработка текстовой команды /start
     if (update.message && update.message.text && update.message.text.startsWith('/start')) {
       const chatId = update.message.chat.id;
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://localhost:3000';
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://skokova-edu.vercel.app').replace(/\/$/, '');
+      const twaUrl = `${baseUrl}/twa`;
 
       const welcomeText = `👋 *Здравствуйте! Вас приветствует Telegram-бот педагога Скоковой Юлии Павловны.*\n\n` +
         `Здесь вы можете записаться на индивидуальные онлайн-уроки по подготовке к школе (5-7 лет) ` +
         `и предметам начальной школы (1-4 классы).\n\n` +
-        `Нажмите кнопку ниже, чтобы открыть интерактивное приложение записи:`;
+        `Нажмите кнопку ниже, чтобы открыть интерактивное приложение записи (Mini App):`;
 
       const keyboard = {
         inline_keyboard: [
           [
             {
-              text: '📅 Записаться на урок (WebApp)',
-              web_app: { url: appUrl },
+              text: '📅 Записаться на урок (Mini App)',
+              web_app: { url: twaUrl },
             },
           ],
           [
-            { text: '💬 Связаться с педагогом', url: 'https://t.me/teacher' },
+            { text: '💬 Связаться с педагогом', url: 'https://t.me/ssharonovv' },
           ],
         ],
       };
