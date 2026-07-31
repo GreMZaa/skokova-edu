@@ -514,7 +514,7 @@ async function syncBotDescription(botToken: string) {
 // -------------------------------------------------------------
 const mainInlineKeyboard = {
   inline_keyboard: [
-    [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+    [{ text: '📅 Записаться на урок', callback_data: 'start_booking' }],
     [{ text: '👤 Мой кабинет', callback_data: 'menu_my' }],
     [{ text: '📚 Программы и тарифы', callback_data: 'menu_programs' }],
     [{ text: '💳 Реквизиты оплаты', callback_data: 'menu_requisites' }],
@@ -528,6 +528,23 @@ const yuliaContactInlineKb = {
     [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
   ],
 };
+
+async function renderServicesScreen(botToken: string, chatId: number, session: any, messageId?: number) {
+  const servicesText = `📚 *ШАГ 1: ВЫБЕРИТЕ ПРОГРАММУ ЗАНЯТИЯ*\n\n` +
+    `Выберите интересующую Вас программу или формат обучения ниже:`;
+
+  const servicesInlineKb = {
+    inline_keyboard: [
+      [{ text: '💻 Онлайн-занятие (Индивидуально) — 600 ₽', callback_data: 'service_online' }],
+      [{ text: '🏫 Оффлайн-занятие (В кабинете) — 800 ₽', callback_data: 'service_offline' }],
+      [{ text: '📚 Подготовка к школе (Групповое) — 500 ₽', callback_data: 'service_group' }],
+      [{ text: '💬 Первичная консультация — Бесплатно', callback_data: 'service_consult' }],
+      [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
+    ],
+  };
+
+  await editOrSendMessage(botToken, chatId, messageId, servicesText, servicesInlineKb, session);
+}
 
 async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any, messageId?: number) {
   const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
@@ -1105,6 +1122,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
+      // Записаться на урок (/book или текстовая команда) -> ШАГ 1
+      if (text === '/book' || text.includes('Записаться')) {
+        await renderServicesScreen(botToken, chatId, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
       // Добавление имени ребёнка через личный кабинет
       if (session.step === 'adding_child_name' && text) {
         session.new_child_name = text;
@@ -1431,13 +1455,20 @@ export async function POST(req: Request) {
 
         const historyInlineKb = {
           inline_keyboard: [
-            [{ text: '📅 Записаться на новый урок', callback_data: 'service_online' }],
+            [{ text: '📅 Записаться на новый урок', callback_data: 'start_booking' }],
             [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
             [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
           ],
         };
 
         await editOrSendMessage(botToken, chatId, messageId, historyMsg, historyInlineKb, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Начало бронирования (Клик "📅 Записаться на урок" -> ШАГ 1)
+      if (callbackData === 'start_booking') {
+        await renderServicesScreen(botToken, chatId, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -1449,11 +1480,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Клик по выбору тарифа/программы
+      // Клик по выбору тарифа/программы -> ШАГ 2 (Выбор времени)
       if (callbackData.startsWith('service_')) {
-        const isOffline = callbackData === 'service_offline';
-        const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
-        const selectedPrice = isOffline ? 800 : 600;
+        let selectedTitle = 'Онлайн-занятие (Индивидуально)';
+        let selectedPrice = 600;
+
+        if (callbackData === 'service_offline') {
+          selectedTitle = 'Оффлайн-занятие (В кабинете)';
+          selectedPrice = 800;
+        } else if (callbackData === 'service_group') {
+          selectedTitle = 'Подготовка к школе (Групповое)';
+          selectedPrice = 500;
+        } else if (callbackData === 'service_consult') {
+          selectedTitle = 'Первичная консультация (Бесплатно)';
+          selectedPrice = 0;
+        }
 
         session.step = 'select_slot_time';
         session.service_title = selectedTitle;
