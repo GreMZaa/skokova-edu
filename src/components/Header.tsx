@@ -62,7 +62,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenBooking }) => {
 
   const navLinks = [
     { href: '#programs', label: 'Программы', icon: BookOpen },
-    { href: '#about', label: 'О педагоге', icon: UserCircle },
     { href: '#reviews', label: 'Отзывы', icon: MessageSquare },
   ];
 
@@ -78,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenBooking }) => {
             </div>
             <div className="min-w-0">
               <h1 className="font-bold text-sm sm:text-lg tracking-tight text-[#1F1E1D] leading-tight truncate">
-                {TEACHER_INFO.name}
+                Скокова Юлия Павловна
               </h1>
               <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-mono text-[#595652]">
                 <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />

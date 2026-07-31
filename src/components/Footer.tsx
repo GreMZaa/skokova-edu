@@ -24,9 +24,6 @@ export const Footer: React.FC = () => {
             <h3 className="font-serif font-bold text-xl sm:text-2xl text-white">
               {TEACHER_INFO.name}
             </h3>
-            <p className="text-[10px] sm:text-xs text-white/70 font-mono">
-              Подготовка к школе (5–7 лет) & Репетитор начальной школы (1–4 классы)
-            </p>
           </div>
 
           <div className="md:col-span-6 flex flex-wrap items-center justify-center md:justify-end gap-3 sm:gap-4">

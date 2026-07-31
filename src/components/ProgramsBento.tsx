@@ -23,10 +23,6 @@ export const ProgramsBento: React.FC<ProgramsBentoProps> = ({ onSelectService })
           <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif font-bold text-[#1F1E1D]">
             Программы онлайн-занятий
           </h2>
-          <p className="text-sm sm:text-base text-[#595652] leading-relaxed px-2 sm:px-0">
-            Каждая программа выстраивается под индивидуальные особенности вашего ребёнка. 
-            Выберите подходищее направление и забронируйте удобное время в календаре.
-          </p>
         </div>
 
         {/* Bento Grid */}

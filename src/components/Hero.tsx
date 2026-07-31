@@ -25,23 +25,26 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
             {/* Моноширинный бейдж */}
             <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-full bg-[#2E5A44]/10 text-[#2E5A44] border border-[#2E5A44]/20 text-[10px] sm:text-xs font-mono font-medium">
               <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
-              <span>Опыт более {TEACHER_INFO.experience_years} лет • Высшая категория</span>
+              <span>Опыт работы более 30 лет</span>
             </div>
 
             {/* Заголовок Display Serif — адаптивный */}
             <h1 className="text-[2rem] leading-[1.1] sm:text-5xl md:text-6xl font-serif font-bold text-[#1F1E1D] tracking-tight">
-              Индивидуальное{' '}
-              <span className="block sm:inline">обучение</span>{' '}
-              <span className="italic text-[#C85A32] font-normal block mt-1 sm:inline sm:mt-0">
-                без слёз и стресса
+              Юлия Павловна{' '}
+              <span className="block italic text-[#C85A32] font-normal text-xl sm:text-3xl mt-2">
+                Эксперт по развитию и подготовке к школе
               </span>
             </h1>
 
             {/* Описание */}
             <p className="text-sm sm:text-base md:text-lg text-[#595652] leading-relaxed max-w-2xl">
-              Подготовка к 1 классу и репетиторство для учеников 1–4 классов. 
-              Интерактивные онлайн-уроки с использованием нейропедагогического подхода для уверенного старта в школе.
+              Без слез и нервов, подготовка к школе, начальные классы, математика, русский, литература. ВПР, ОГЭ, ЕГЭ, ГИА, мои отзывы от родителей говорят за меня больше
             </p>
+
+            {/* Подготовка к 1 классу текст */}
+            <div className="p-3.5 sm:p-4 bg-[#2E5A44]/5 border border-[#2E5A44]/20 rounded-xl text-xs sm:text-sm text-[#2E5A44] leading-relaxed font-mono">
+              Подготовка к 1 классу и репетиторство для учеников 1–4 классов. Интерактивные онлайн-уроки с использованием нейропедагогического подхода для уверенного старта в школе.
+            </div>
 
             {/* Быстрые фичи */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 pt-1 sm:pt-2">
@@ -96,10 +99,10 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
                   </div>
                   <div className="min-w-0">
                     <h3 className="font-bold text-base sm:text-lg text-[#1F1E1D] leading-none truncate">
-                      {TEACHER_INFO.name}
+                      Юлия Павловна
                     </h3>
                     <p className="text-[10px] sm:text-xs text-[#595652] font-mono pt-0.5 sm:pt-1 truncate">
-                      Педагог дошкольного & начального образования
+                      Педагог высшей категории
                     </p>
                   </div>
                 </div>
@@ -109,7 +112,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
               <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
                 <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
                   <div className="font-serif font-bold text-xl sm:text-2xl text-[#C85A32] leading-tight">
-                    {TEACHER_INFO.experience_years}
+                    30+
                   </div>
                   <div className="text-[9px] sm:text-[11px] text-[#595652] font-mono mt-0.5 sm:mt-1 leading-tight">
                     лет опыта
@@ -117,7 +120,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
                 </div>
                 <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
                   <div className="font-serif font-bold text-xl sm:text-2xl text-[#2E5A44] leading-tight">
-                    {TEACHER_INFO.students_count}
+                    500+
                   </div>
                   <div className="text-[9px] sm:text-[11px] text-[#595652] font-mono mt-0.5 sm:mt-1 leading-tight">
                     учеников
@@ -125,27 +128,12 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
                 </div>
                 <div className="p-2.5 sm:p-3 bg-[#FAF8F5] rounded-xl border border-[#1F1E1D]/20">
                   <div className="font-serif font-bold text-xl sm:text-2xl text-[#1F1E1D] leading-tight">
-                    {TEACHER_INFO.satisfaction_rate}
+                    100%
                   </div>
                   <div className="text-[9px] sm:text-[11px] text-[#595652] font-mono mt-0.5 sm:mt-1 leading-tight">
                     отзывов 5★
                   </div>
                 </div>
-              </div>
-
-              {/* Образование */}
-              <div className="space-y-2">
-                <h4 className="text-[10px] sm:text-xs font-mono uppercase font-bold tracking-wider text-[#595652]">
-                  Квалификация и образование:
-                </h4>
-                <ul className="space-y-1 sm:space-y-1.5 text-[11px] sm:text-xs text-[#1F1E1D]">
-                  {TEACHER_INFO.education.map((item, index) => (
-                    <li key={index} className="flex items-start gap-1.5 sm:gap-2">
-                      <span className="text-[#C85A32] font-bold shrink-0">•</span>
-                      <span className="leading-snug">{item}</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
 
               {/* Статус */}

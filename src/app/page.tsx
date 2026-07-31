@@ -40,10 +40,7 @@ export default function Home() {
           onSelectService={(title) => handleOpenBooking(title)} 
         />
 
-        {/* О педагоге и методике */}
-        <AboutTeacher />
-
-        {/* Отзывы и Вопросы-Ответы (FAQ) */}
+        {/* Отзывы */}
         <TestimonialsFAQ />
       </div>
 

@@ -69,57 +69,6 @@ export const TestimonialsFAQ: React.FC = () => {
           </div>
         </div>
 
-        {/* Блок FAQ */}
-        <div className="space-y-8 sm:space-y-10 max-w-3xl mx-auto pt-6 sm:pt-8 border-t-2 border-[#1F1E1D]/10">
-          <div className="text-center space-y-2.5 sm:space-y-3">
-            <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1 rounded-full bg-[#2E5A44]/10 text-[#2E5A44] text-[10px] sm:text-xs font-mono font-medium">
-              <HelpCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>Ответы на вопросы</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-bold text-[#1F1E1D]">
-              Частые вопросы родителей
-            </h2>
-          </div>
-
-          <div className="space-y-3 sm:space-y-4">
-            {TEACHER_INFO.faqs.map((faq, idx) => {
-              const isOpen = openFaq === idx;
-              return (
-                <motion.div 
-                  key={idx}
-                  initial={{ opacity: 0, y: 12 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: idx * 0.05 }}
-                  className="bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-xl hard-shadow overflow-hidden transition-all"
-                >
-                  <button
-                    onClick={() => toggleFaq(idx)}
-                    className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-3 sm:gap-4 font-bold text-xs sm:text-sm md:text-base text-[#1F1E1D] cursor-pointer hover:text-[#C85A32] active:bg-[#FAF8F5]/50 transition-colors"
-                  >
-                    <span className="leading-snug">{faq.question}</span>
-                    <ChevronDown className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180 text-[#C85A32]' : ''}`} />
-                  </button>
-
-                  <AnimatePresence>
-                    {isOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                        className="px-4 pb-4 sm:px-5 sm:pb-5 text-[11px] sm:text-xs md:text-sm text-[#595652] leading-relaxed border-t border-[#1F1E1D]/10 pt-3"
-                      >
-                        {faq.answer}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-
       </div>
     </section>
   );
