@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/server';
 
 function sanitizeEnv(val?: string): string {
@@ -6,8 +7,15 @@ function sanitizeEnv(val?: string): string {
   return val.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 }
 
-// Хранение кодов в памяти процесса (и с фолбэком в Supabase)
+// Хранение кодов в памяти процесса (и с фолбэком в Supabase & HMAC)
 export const pendingTelegramCodes = new Map<string, { code: string; expiresAt: number }>();
+
+export function generateCodeToken(code: string, expiresAt: number, secret: string): string {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`${code}:${expiresAt}`)
+    .digest('hex');
+}
 
 export async function POST(req: Request) {
   try {
@@ -28,7 +36,7 @@ export async function POST(req: Request) {
 
     pendingTelegramCodes.set(targetUserChatId, { code, expiresAt });
 
-    // Также фиксируем во временной таблице/метаданных в Supabase DB
+    // 1. Сохранение в Supabase DB в таблицу settings
     const supabaseUrl = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
     const supabaseServiceKey = sanitizeEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
     if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
@@ -36,7 +44,8 @@ export async function POST(req: Request) {
         const supabase = createAdminClient();
         await supabase.from('settings').upsert({
           id: 'admin_telegram_code',
-          value: JSON.stringify({ code, expiresAt, chatId: targetUserChatId }),
+          phone: code,
+          card_number: String(expiresAt),
           updated_at: new Date().toISOString(),
         });
       } catch (dbErr) {
@@ -44,7 +53,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Отправка одноразового кода СТРОГО в личный чат администратора (ID 405845462)
+    // 2. Генерация HMAC-токена подписи
+    const verificationToken = generateCodeToken(code, expiresAt, botToken);
+
+    // 3. Отправка одноразового кода СТРОГО в личный чат администратора (ID 405845462)
     const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -70,6 +82,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
+      verificationToken,
+      expiresAt,
       message: 'Одноразовый код подтверждения успешно отправлен в Ваш личный Telegram (@ssharonovv)!',
     });
   } catch (error: any) {

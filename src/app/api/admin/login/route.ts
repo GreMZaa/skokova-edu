@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/server';
-import { pendingTelegramCodes } from '../telegram-code/route';
+import { pendingTelegramCodes, generateCodeToken } from '../telegram-code/route';
 
 function sanitizeEnv(val?: string): string {
   if (!val) return '';
@@ -28,7 +28,7 @@ function verifyTelegramWidgetData(data: Record<string, any>, botToken: string): 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { authType, email, password, code, telegramWidgetData } = body;
+    const { authType, email, password, code, verificationToken, expiresAt, telegramWidgetData } = body;
 
     const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
     const userAgent = req.headers.get('user-agent') || 'Unknown';
@@ -45,19 +45,29 @@ export async function POST(req: Request) {
 
     // 1. АВТОРИЗАЦИЯ ЧЕРЕЗ TELEGRAM
     if (authType === 'telegram') {
-      // А. Проверка 6-значного одноразового кода, отправленного ботом
+      // А. Проверка 6-значного одноразового кода
       if (code && String(code).trim().length > 0) {
         const inputCode = String(code).trim();
         let validCode = false;
 
-        // Проверка в памяти сервера
-        const memoryEntry = pendingTelegramCodes.get(targetAdminChatId);
-        if (memoryEntry && memoryEntry.code === inputCode && Date.now() <= memoryEntry.expiresAt) {
-          validCode = true;
-          pendingTelegramCodes.delete(targetAdminChatId);
+        // 1. Проверка HMAC токена (бессерверная проверка 100% точности без задержек DB)
+        if (verificationToken && expiresAt && botToken) {
+          const expectedToken = generateCodeToken(inputCode, Number(expiresAt), botToken);
+          if (expectedToken === verificationToken && Date.now() <= Number(expiresAt)) {
+            validCode = true;
+          }
         }
 
-        // Фолбэк: проверка в Supabase DB
+        // 2. Проверка в памяти процесса
+        if (!validCode) {
+          const memoryEntry = pendingTelegramCodes.get(targetAdminChatId);
+          if (memoryEntry && memoryEntry.code === inputCode && Date.now() <= memoryEntry.expiresAt) {
+            validCode = true;
+            pendingTelegramCodes.delete(targetAdminChatId);
+          }
+        }
+
+        // 3. Фолбэк: проверка в Supabase DB
         if (!validCode) {
           const supabaseUrl = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
           const supabaseServiceKey = sanitizeEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -66,13 +76,14 @@ export async function POST(req: Request) {
               const supabase = createAdminClient();
               const { data: dbSettings } = await supabase
                 .from('settings')
-                .select('value')
+                .select('phone, card_number')
                 .eq('id', 'admin_telegram_code')
                 .maybeSingle();
 
-              if (dbSettings?.value) {
-                const parsed = JSON.parse(dbSettings.value);
-                if (parsed.code === inputCode && Date.now() <= parsed.expiresAt) {
+              if (dbSettings?.phone && dbSettings?.card_number) {
+                const storedCode = dbSettings.phone;
+                const expTime = Number(dbSettings.card_number);
+                if (storedCode === inputCode && Date.now() <= expTime) {
                   validCode = true;
                 }
               }

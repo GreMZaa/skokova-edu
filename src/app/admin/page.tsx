@@ -144,6 +144,9 @@ export default function AdminPage() {
   const [telegramCodeInput, setTelegramCodeInput] = useState<string>('');
   const [codeMsg, setCodeMsg] = useState<string>('');
   const [sendingCode, setSendingCode] = useState<boolean>(false);
+  const [tgVerificationToken, setTgVerificationToken] = useState<string>('');
+  const [tgCodeExpiresAt, setTgCodeExpiresAt] = useState<number>(0);
+
 
 
   useEffect(() => {
@@ -318,6 +321,9 @@ export default function AdminPage() {
         return;
       }
 
+      if (data.verificationToken) setTgVerificationToken(data.verificationToken);
+      if (data.expiresAt) setTgCodeExpiresAt(data.expiresAt);
+
       setTelegramCodeSent(true);
       setCodeMsg(data.message || 'Одноразовый код отправлен в ваш Telegram!');
     } catch (err: any) {
@@ -348,6 +354,8 @@ export default function AdminPage() {
             throw new Error('Пожалуйста, введите 6-значный одноразовый код из Telegram');
           }
           reqBody.code = codeToVerify.trim();
+          reqBody.verificationToken = payload?.verificationToken || tgVerificationToken;
+          reqBody.expiresAt = payload?.expiresAt || tgCodeExpiresAt;
           if (payload?.telegramWidgetData) {
             reqBody.telegramWidgetData = payload.telegramWidgetData;
           }
