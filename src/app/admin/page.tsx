@@ -133,11 +133,17 @@ export default function AdminPage() {
 
   // Авторизационные состояния
   const [authTab, setAuthTab] = useState<'telegram' | 'supabase'>('telegram');
-
-  const [supabaseEmail, setSupabaseEmail] = useState<string>('');
+  const [supabaseEmail, setSupabaseEmail] = useState<string>('admin@skokova.ru');
   const [supabasePassword, setSupabasePassword] = useState<string>('');
   const [telegramUser, setTelegramUser] = useState<any>(null);
   const [adminInfo, setAdminInfo] = useState<{ name?: string; handle?: string; email?: string; photoUrl?: string }>({});
+
+  // Одноразовый код Telegram
+  const [telegramCodeSent, setTelegramCodeSent] = useState<boolean>(false);
+  const [telegramCodeInput, setTelegramCodeInput] = useState<string>('');
+  const [codeMsg, setCodeMsg] = useState<string>('');
+  const [sendingCode, setSendingCode] = useState<boolean>(false);
+
 
   useEffect(() => {
     const authStatus = sessionStorage.getItem('skokova_admin_auth');
@@ -292,6 +298,27 @@ export default function AdminPage() {
     }
   };
 
+  const handleSendTelegramCode = async () => {
+    setSendingCode(true);
+    setLoginError('');
+    setCodeMsg('');
+    try {
+      const res = await fetch('/api/admin/telegram-code', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось отправить код');
+      }
+      setTelegramCodeSent(true);
+      setCodeMsg(data.message || 'Одноразовый код отправлен в ваш Telegram!');
+    } catch (err: any) {
+      setLoginError(err.message || 'Ошибка отправки кода');
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
   const handleAuthSubmit = async (type: 'telegram' | 'supabase', payload?: any) => {
     setIsSubmitting(true);
     setLoginError('');
@@ -305,13 +332,16 @@ export default function AdminPage() {
         reqBody.email = supabaseEmail;
         reqBody.password = supabasePassword;
       } else if (type === 'telegram') {
-        reqBody.telegramUser = payload || telegramUser || {
-          id: 405845462,
-          username: 'ssharonovv',
-          first_name: 'Сергей',
-          last_name: 'Шаронов',
-        };
+        const codeToVerify = payload?.code || telegramCodeInput;
+        if (!codeToVerify || codeToVerify.trim().length === 0) {
+          throw new Error('Пожалуйста, введите 6-значный одноразовый код из Telegram');
+        }
+        reqBody.code = codeToVerify.trim();
+        if (payload?.telegramWidgetData) {
+          reqBody.telegramWidgetData = payload.telegramWidgetData;
+        }
       }
+
 
 
       const res = await fetch('/api/admin/login', {
@@ -536,47 +566,92 @@ export default function AdminPage() {
           {/* 1. ВКЛАДКА TELEGRAM AUTH */}
           {authTab === 'telegram' && (
             <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-sky-50/80 border border-sky-200 space-y-2 text-xs font-mono">
-                <div className="flex items-center justify-between text-sky-900 font-bold">
-                  <span className="flex items-center gap-1.5">
-                    <Send className="w-4 h-4 text-sky-600" />
-                    <span>Разрешённый администратор:</span>
-                  </span>
-                  <span className="px-2 py-0.5 bg-sky-200 text-sky-900 rounded font-bold">@ssharonovv</span>
+              {codeMsg && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{codeMsg}</span>
                 </div>
-                <div className="text-sky-700 text-[11px] leading-relaxed">
-                  ID: <code className="bg-sky-100 px-1 py-0.5 rounded text-sky-900 font-bold">405845462</code> • Администратор Сергей Шаронов
-                </div>
-              </div>
+              )}
 
-              {telegramUser ? (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono flex items-center justify-between">
-                  <div>
-                    <span className="font-bold">Обнаружен Telegram WebApp:</span>
-                    <div>@{telegramUser.username || telegramUser.id}</div>
+              {!telegramCodeSent ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-mono text-[#595652] leading-relaxed">
+                    Для входа вам будет отправлен одноразовый 6-значный код прямо в Telegram администратора.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={handleSendTelegramCode}
+                    disabled={sendingCode}
+                    className="w-full py-3.5 px-4 bg-[#0088cc] hover:bg-[#0077b3] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {sendingCode ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Отправка кода...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Получить код в Telegram ➔</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAuthSubmit('telegram');
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                      Введите 6-значный код из Telegram:
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={telegramCodeInput}
+                        onChange={(e) => setTelegramCodeInput(e.target.value)}
+                        placeholder="123456"
+                        maxLength={6}
+                        className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-center text-xl font-bold tracking-widest focus:outline-none focus:border-[#C85A32] transition-colors"
+                        autoFocus
+                        required
+                      />
+                      <KeyRound className="w-5 h-5 text-gray-400 absolute right-3 top-3.5" />
+                    </div>
                   </div>
-                  <span className="px-2 py-1 bg-emerald-200 text-emerald-900 rounded font-bold">Подключен</span>
-                </div>
-              ) : null}
 
-              <button
-                type="button"
-                onClick={() => handleAuthSubmit('telegram')}
-                disabled={isSubmitting}
-                className="w-full py-3.5 px-4 bg-[#0088cc] hover:bg-[#0077b3] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Проверка Telegram...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    <span>Войти через Telegram (@ssharonovv)</span>
-                  </>
-                )}
-              </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Проверка кода...</span>
+                      </>
+                    ) : (
+                      <span>Подтвердить код и войти ➔</span>
+                    )}
+                  </button>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={handleSendTelegramCode}
+                      disabled={sendingCode}
+                      className="text-xs font-mono text-[#0088cc] hover:underline cursor-pointer"
+                    >
+                      {sendingCode ? 'Отправка...' : 'Отправить код повторно'}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
 
