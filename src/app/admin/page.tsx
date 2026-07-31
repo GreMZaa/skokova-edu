@@ -133,8 +133,9 @@ export default function AdminPage() {
 
   // Авторизационные состояния
   const [authTab, setAuthTab] = useState<'telegram' | 'supabase'>('telegram');
-  const [supabaseEmail, setSupabaseEmail] = useState<string>('admin@skokova.ru');
+  const [supabaseEmail, setSupabaseEmail] = useState<string>('');
   const [supabasePassword, setSupabasePassword] = useState<string>('');
+
   const [telegramUser, setTelegramUser] = useState<any>(null);
   const [adminInfo, setAdminInfo] = useState<{ name?: string; handle?: string; email?: string; photoUrl?: string }>({});
 
