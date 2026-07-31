@@ -302,68 +302,20 @@ export default function AdminPage() {
     }
   };
 
-  const handleSendTelegramCode = async () => {
-    setSendingCode(true);
-    setLoginError('');
-    setCodeMsg('');
-    try {
-      const res = await fetch('/api/admin/telegram-code', {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Не удалось отправить код');
-      }
-
-      if (data.fallbackMode) {
-        // Если бот ещё не привязан на Vercel — мгновенный вход для администратора
-        await handleAuthSubmit('telegram', { fallback: true });
-        return;
-      }
-
-      if (data.verificationToken) setTgVerificationToken(data.verificationToken);
-      if (data.expiresAt) setTgCodeExpiresAt(data.expiresAt);
-
-      setTelegramCodeSent(true);
-      setCodeMsg(data.message || 'Одноразовый код отправлен в ваш Telegram!');
-    } catch (err: any) {
-      setLoginError(err.message || 'Ошибка отправки кода');
-    } finally {
-      setSendingCode(false);
-    }
-  };
-
-  const handleAuthSubmit = async (type: 'telegram' | 'supabase', payload?: any) => {
+  const handleAuthSubmit = async () => {
     setIsSubmitting(true);
     setLoginError('');
 
     try {
-      let reqBody: any = { authType: type };
-      if (type === 'supabase') {
-        if (!supabaseEmail || !supabasePassword) {
-          throw new Error('Пожалуйста, укажите Email и пароль Supabase');
-        }
-        reqBody.email = supabaseEmail.trim();
-        reqBody.password = supabasePassword.trim();
-      } else if (type === 'telegram') {
-        if (payload?.fallback) {
-          reqBody.fallback = true;
-        } else {
-          const codeToVerify = payload?.code || telegramCodeInput;
-          if (!codeToVerify || codeToVerify.trim().length === 0) {
-            throw new Error('Пожалуйста, введите 6-значный одноразовый код из Telegram');
-          }
-          reqBody.code = codeToVerify.trim();
-          reqBody.verificationToken = payload?.verificationToken || tgVerificationToken;
-          reqBody.expiresAt = payload?.expiresAt || tgCodeExpiresAt;
-          if (payload?.telegramWidgetData) {
-            reqBody.telegramWidgetData = payload.telegramWidgetData;
-          }
-        }
+      if (!supabaseEmail || !supabasePassword) {
+        throw new Error('Пожалуйста, укажите Email (Логин) и пароль');
       }
 
-
-
+      const reqBody = {
+        authType: 'supabase',
+        email: supabaseEmail.trim(),
+        password: supabasePassword.trim(),
+      };
 
       const res = await fetch('/api/admin/login', {
         method: 'POST',
@@ -374,20 +326,18 @@ export default function AdminPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка входа');
+        throw new Error(data.error || 'Неверный email или пароль');
       }
 
-      // Если авторизация прошла по Supabase Auth — синхронизируем клиентскую сессию
-      if (type === 'supabase') {
-        try {
-          const supabase = createClient();
-          await supabase.auth.signInWithPassword({
-            email: supabaseEmail.trim(),
-            password: supabasePassword,
-          });
-        } catch (e) {
-          console.warn('Supabase client signin sync note:', e);
-        }
+      // Синхронизируем клиентскую сессию Supabase
+      try {
+        const supabase = createClient();
+        await supabase.auth.signInWithPassword({
+          email: supabaseEmail.trim(),
+          password: supabasePassword,
+        });
+      } catch (e) {
+        console.warn('Supabase client signin sync note:', e);
       }
 
       const info = data.adminInfo || { name: 'Администратор' };
@@ -405,6 +355,7 @@ export default function AdminPage() {
       setIsSubmitting(false);
     }
   };
+
 
   const handleLogout = async () => {
     setIsAuthenticated(false);
@@ -531,7 +482,7 @@ export default function AdminPage() {
     }
   };
 
-  // ЭКРАН ВХОДА С АВТОРИЗАЦИЕЙ ЧЕРЕЗ TELEGRAM И SUPABASE
+  // ЭКРАН ВХОДА ПО EMAIL И ПАРОЛЮ
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] flex items-center justify-center p-4">
@@ -544,37 +495,8 @@ export default function AdminPage() {
               Панель преподавателя
             </h1>
             <p className="text-xs text-[#595652] font-mono">
-              Авторизация администратора (Telegram / Supabase)
+              Вход по Логину и Паролю
             </p>
-          </div>
-
-          {/* Переключатель способов входа */}
-          <div className="flex border-2 border-[#1F1E1D] rounded-xl p-1 bg-[#FAF8F5] gap-1">
-            <button
-              type="button"
-              onClick={() => setAuthTab('telegram')}
-              className={`flex-1 py-2 text-xs font-mono font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                authTab === 'telegram'
-                  ? 'bg-[#C85A32] text-white hard-shadow'
-                  : 'text-[#595652] hover:text-[#1F1E1D]'
-              }`}
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>Telegram</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAuthTab('supabase')}
-              className={`flex-1 py-2 text-xs font-mono font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                authTab === 'supabase'
-                  ? 'bg-[#C85A32] text-white hard-shadow'
-                  : 'text-[#595652] hover:text-[#1F1E1D]'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Supabase</span>
-            </button>
           </div>
 
           {loginError && (
@@ -584,162 +506,68 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 1. ВКЛАДКА TELEGRAM AUTH */}
-          {authTab === 'telegram' && (
-            <div className="space-y-4">
-              {codeMsg && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{codeMsg}</span>
-                </div>
-              )}
-
-              {!telegramCodeSent ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-mono text-[#595652] leading-relaxed">
-                    Для входа вам будет отправлен одноразовый 6-значный код прямо в Telegram администратора.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={handleSendTelegramCode}
-                    disabled={sendingCode}
-                    className="w-full py-3.5 px-4 bg-[#0088cc] hover:bg-[#0077b3] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {sendingCode ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Отправка кода...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        <span>Получить код в Telegram ➔</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleAuthSubmit('telegram');
-                  }}
-                  className="space-y-4"
-                >
-                  <div className="space-y-1">
-                    <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                      Введите 6-значный код из Telegram:
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={telegramCodeInput}
-                        onChange={(e) => setTelegramCodeInput(e.target.value)}
-                        placeholder="123456"
-                        maxLength={6}
-                        className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-center text-xl font-bold tracking-widest focus:outline-none focus:border-[#C85A32] transition-colors"
-                        autoFocus
-                        required
-                      />
-                      <KeyRound className="w-5 h-5 text-gray-400 absolute right-3 top-3.5" />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Проверка кода...</span>
-                      </>
-                    ) : (
-                      <span>Подтвердить код и войти ➔</span>
-                    )}
-                  </button>
-
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={handleSendTelegramCode}
-                      disabled={sendingCode}
-                      className="text-xs font-mono text-[#0088cc] hover:underline cursor-pointer"
-                    >
-                      {sendingCode ? 'Отправка...' : 'Отправить код повторно'}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
-
-          {/* 2. ВКЛАДКА SUPABASE AUTH */}
-          {authTab === 'supabase' && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleAuthSubmit('supabase');
-              }}
-              className="space-y-4"
-            >
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                    Email в Supabase:
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="email"
-                      value={supabaseEmail}
-                      onChange={(e) => setSupabaseEmail(e.target.value)}
-                      placeholder="admin@example.com"
-                      className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
-                      required
-                    />
-                    <Mail className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                    Пароль:
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      value={supabasePassword}
-                      onChange={(e) => setSupabasePassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
-                      required
-                    />
-                    <Lock className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
-                  </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAuthSubmit();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                  Email или Логин:
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={supabaseEmail}
+                    onChange={(e) => setSupabaseEmail(e.target.value)}
+                    placeholder="example@mail.ru"
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
+                    autoFocus
+                    required
+                  />
+                  <Mail className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Проверка Supabase...</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Войти через Supabase Auth ➔</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )}
+              <div className="space-y-1">
+                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                  Пароль:
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={supabasePassword}
+                    onChange={(e) => setSupabasePassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
+                    required
+                  />
+                  <Lock className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Проверка данных...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Войти в панель администратора ➔</span>
+                </>
+              )}
+            </button>
+          </form>
 
           <div className="text-center pt-2">
             <a
