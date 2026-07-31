@@ -47,17 +47,13 @@ export async function POST(req: Request) {
       // Команда /start
       if (text.startsWith('/start')) {
         const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
-          `Вас приветствует официальный Telegram-бот педагога *Скоковой Юлии Павловны*.\n\n` +
-          `✨ *Здесь вам доступны все возможности платформы:*\n` +
-          `• Интерактивное Mini App приложение для записи на уроки\n` +
-          `• Личный кабинет родителя с историями занятий\n` +
-          `• Ссылки на онлайн-уроки и отправка чеков оплаты\n\n` +
-          `Выберите нужный раздел в меню ниже или нажмите *«📅 Записаться (Mini App)»*:`;
+          `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов.\n\n` +
+          `Выберите нужный раздел в меню ниже или нажмите кнопку:`;
 
         const inlineKb = {
           inline_keyboard: [
-            [{ text: '🚀 Открыть Mini App (На весь экран)', web_app: { url: twaUrl } }],
-            [{ text: '👤 Личный кабинет на сайте', url: `${baseUrl}/login` }],
+            [{ text: '🚀 Открыть Mini App', web_app: { url: twaUrl } }],
+            [{ text: '💬 Связаться с педагогом', url: 'https://t.me/ssharonovv' }],
           ],
         };
 
@@ -68,16 +64,6 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: welcomeText,
             parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
-          }),
-        });
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: 'Нажмите ниже для запуска приложения записи:',
             reply_markup: inlineKb,
           }),
         });
