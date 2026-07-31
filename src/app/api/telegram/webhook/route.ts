@@ -509,34 +509,12 @@ const yuliaContactInlineKb = {
   ],
 };
 
-const mainReplyKeyboard = {
-  keyboard: [
-    [{ text: '📱 Главное меню' }, { text: '👤 Мой кабинет' }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-};
-
 async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any, messageId?: number) {
   const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
     `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
     `✨ *Выберите нужный раздел на интерактивных кнопках ниже:*`;
 
   await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
-
-  // Всегда закрепляем стойкую нижнюю меню-клавиатуру Telegram, 100% блокирующую синюю кнопку "Старт" на iOS
-  try {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: '👇 *Навигация по меню доступна на кнопках ниже:*',
-        parse_mode: 'Markdown',
-        reply_markup: mainReplyKeyboard,
-      }),
-    });
-  } catch (e) {}
 }
 
 async function renderPersonalCabinetScreen(
