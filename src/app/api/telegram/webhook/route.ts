@@ -87,7 +87,7 @@ async function getOrCreateUserProfile(
       return existingByPhone.id;
     }
 
-    // Поиск по предыдущим бронированиям с сайта (если пользователь бронировал на сайте ранее)
+    // Поиск по предыдущим бронированиям с сайта
     const { data: pastBookings } = await supabase
       .from('bookings')
       .select('user_id, parent_name, phone')
@@ -110,7 +110,7 @@ async function getOrCreateUserProfile(
     }
   }
 
-  // 3. Поиск по email/telegramId в Supabase Auth (если бот уже связывал аккаунт)
+  // 3. Поиск по email/telegramId в Supabase Auth
   const { data: authList } = await supabase.auth.admin.listUsers();
   const existingAuthUser = authList?.users?.find(
     (u: any) => u.email === email || u.user_metadata?.telegram_id === telegramId
@@ -128,7 +128,7 @@ async function getOrCreateUserProfile(
     return existingAuthUser.id;
   }
 
-  // 4. СОЗДАНИЕ НОВОГО ПРОФИЛЯ: Только если пользователь действительно регистрируется впервые
+  // 4. СОЗДАНИЕ НОВОГО ПРОФИЛЯ: Только если пользователь впервые
   const { data: authUserData, error: authErr } = await supabase.auth.admin.createUser({
     email: email,
     password: password,
@@ -156,6 +156,76 @@ async function getOrCreateUserProfile(
   }
 
   return parentUserId;
+}
+
+// Построитель компактной сетки выбора слотов даты и времени (Инлайн-клавиатура)
+async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
+  const nowIso = new Date().toISOString();
+
+  const { data: slots } = await supabase
+    .from('time_slots')
+    .select('*')
+    .eq('is_booked', false)
+    .gte('start_time', nowIso)
+    .order('start_time', { ascending: true });
+
+  const validSlots = slots || [];
+  const pageSize = 6;
+  const totalPages = Math.ceil(validSlots.length / pageSize) || 1;
+  const currentPage = Math.max(0, Math.min(page, totalPages - 1));
+
+  const pageSlots = validSlots.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+
+  const inline_keyboard: any[][] = [];
+
+  // Группируем слоты по 2 в ряд в красивую компактную инлайн-сетку
+  for (let i = 0; i < pageSlots.length; i += 2) {
+    const row: any[] = [];
+
+    const slot1 = pageSlots[i];
+    const dateStr1 = new Date(slot1.start_time).toLocaleString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Samara',
+    });
+    row.push({
+      text: `🗓 ${dateStr1}`,
+      callback_data: `selectslot_${slot1.id}_${encodeURIComponent(dateStr1)}`,
+    });
+
+    if (i + 1 < pageSlots.length) {
+      const slot2 = pageSlots[i + 1];
+      const dateStr2 = new Date(slot2.start_time).toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Samara',
+      });
+      row.push({
+        text: `🗓 ${dateStr2}`,
+        callback_data: `selectslot_${slot2.id}_${encodeURIComponent(dateStr2)}`,
+      });
+    }
+
+    inline_keyboard.push(row);
+  }
+
+  // Кнопки пагинации слотов (перелистывание страниц)
+  const navRow: any[] = [];
+  if (currentPage > 0) {
+    navRow.push({ text: '◀️ Раньше', callback_data: `slotpage_${currentPage - 1}` });
+  }
+  if (currentPage < totalPages - 1) {
+    navRow.push({ text: 'Позже ▶️', callback_data: `slotpage_${currentPage + 1}` });
+  }
+  if (navRow.length > 0) {
+    inline_keyboard.push(navRow);
+  }
+
+  return { inline_keyboard, totalSlots: validSlots.length, currentPage, totalPages };
 }
 
 // Временное хранилище шагов диалога (Session state for Telegram users)
@@ -405,7 +475,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия
+      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия (Инлайн-сетка слотов с пагинацией)
       if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
         const isOffline = text.includes('Оффлайн');
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
@@ -417,40 +487,16 @@ export async function POST(req: Request) {
           price: selectedPrice,
         };
 
-        // Запрашиваем свободные слоты из базы данных Supabase
-        const { data: slots } = await supabase
-          .from('time_slots')
-          .select('*')
-          .eq('is_booked', false)
-          .gte('start_time', new Date().toISOString())
-          .order('start_time', { ascending: true })
-          .limit(4);
+        const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
 
-        let timeButtons: any[][] = [];
-        let slotMsg = `⏰ *ШАГ 2: Выберите дату и время занятия*\n\n` +
+        let slotMsg = `⏰ *ШАГ 2: ВЫБЕРИТЕ ДАТУ И ВРЕМЯ ЗАНЯТИЯ*\n\n` +
           `Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n`;
 
-        if (slots && slots.length > 0) {
-          slotMsg += `Доступные слоты на эту неделю:`;
-          slots.forEach((s: any) => {
-            const dateStr = new Date(s.start_time).toLocaleString('ru-RU', {
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Europe/Samara',
-            });
-            timeButtons.push([{ text: `⏰ ${dateStr}` }]);
-          });
+        if (totalSlots === 0) {
+          slotMsg += `⚠️ На ближайшие дни пока нет свободных слотов в расписании. Попробуйте записаться позже!`;
+        } else {
+          slotMsg += `Выберите свободный день и время на интерактивной клавиатуре ниже:`;
         }
-
-        timeButtons.push([{ text: '⏰ Уточнить удобное время с педагогом' }]);
-        timeButtons.push([{ text: '⬅️ Назад в главное меню' }]);
-
-        const slotReplyKeyboard = {
-          keyboard: timeButtons,
-          resize_keyboard: true,
-        };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -459,21 +505,20 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: slotMsg,
             parse_mode: 'Markdown',
-            reply_markup: slotReplyKeyboard,
+            reply_markup: { inline_keyboard },
           }),
         });
 
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 2 -> ШАГ 3: Запрос имени родителя
-      if (session.step === 'select_slot_time' || text.includes('⏰')) {
-        const slotChoice = text.startsWith('⏰') ? text.replace('⏰', '').trim() : 'Согласовать удобное время';
-        session.slot_time = slotChoice;
+      // ШАГ 2 -> ШАГ 3: Если время введено сообщением или через инлайн
+      if (session.step === 'select_slot_time' && text && !text.includes('Записаться') && !text.includes('Онлайн') && !text.includes('Оффлайн')) {
+        session.slot_time = text.replace('⏰', '').trim();
         session.step = 'awaiting_parent_name';
         userSessions[userId] = session;
 
-        const parentPromptMsg = `👍 Время: *${slotChoice}*\n\n` +
+        const parentPromptMsg = `👍 Время: *${session.slot_time}*\n\n` +
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
           `Напишите Ваше имя (например: \`${firstName}\`):`;
 
@@ -591,7 +636,7 @@ export async function POST(req: Request) {
         });
 
         // 2. Автоматическое создание/привязка ребёнка в таблице `children`
-        if (childNameOnly) {
+        if (childNameOnly && parentUserId) {
           const { data: existingChild } = await supabase
             .from('children')
             .select('id')
@@ -613,6 +658,7 @@ export async function POST(req: Request) {
           .from('bookings')
           .insert({
             user_id: parentUserId,
+            slot_id: session.slot_id || null,
             service_title: session.service_title || SERVICES[0].title,
             price: session.price || SERVICES[0].price,
             parent_name: parentNameOnly,
@@ -793,7 +839,7 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------
-    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК ПЕДАГОГА)
+    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК)
     // -------------------------------------------------------------
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
@@ -806,6 +852,56 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callback_query_id: callbackQuery.id }),
       });
+
+      // Клик по инлайн-слоту времени
+      if (callbackData.startsWith('selectslot_')) {
+        const parts = callbackData.split('_');
+        const slotId = parts[1];
+        const timeStr = parts[2] ? decodeURIComponent(parts[2]) : 'Выбранное время';
+
+        const userId = callbackQuery.from?.id || chatId;
+        const session = userSessions[userId] || {};
+        session.slot_id = slotId;
+        session.slot_time = timeStr;
+        session.step = 'awaiting_parent_name';
+        userSessions[userId] = session;
+
+        const updatedSlotText = `⏰ *ВЫБРАНО ВРЕМЯ:* \`${timeStr}\`\n\n` +
+          `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
+          `Напишите Ваше имя (например: \`${callbackQuery.from?.first_name || 'Родитель'}\`):`;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            message_id: messageId,
+            text: updatedSlotText,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [] },
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      // Перелистывание страниц слотов
+      if (callbackData.startsWith('slotpage_')) {
+        const pageNum = parseInt(callbackData.split('_')[1] || '0', 10);
+        const { inline_keyboard } = await buildSlotInlineKeyboard(supabase, pageNum);
+
+        await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: { inline_keyboard },
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
 
       // Подтверждение или отмена педагогом
       const [action, bookingId] = callbackData.split('_');
