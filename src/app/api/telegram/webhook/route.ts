@@ -448,7 +448,7 @@ export async function POST(req: Request) {
         const rawGrade = session.child_grade || '';
         const mappedGrade = mapChildGradeToEnum(rawGrade);
 
-        // 1. Автоматический поиск/создание профиля родителя в таблице `profiles`
+        // 1. Автоматическое создание/поиск аккаунта в Supabase Auth и таблице `profiles`
         let parentUserId = '';
         let profileQuery = supabase.from('profiles').select('id');
 
@@ -469,13 +469,33 @@ export async function POST(req: Request) {
             updated_at: new Date().toISOString(),
           }).eq('id', parentUserId);
         } else {
-          parentUserId = crypto.randomUUID();
-          await supabase.from('profiles').insert({
-            id: parentUserId,
-            full_name: parentNameOnly,
-            phone: phone,
-            telegram_handle: username || null,
+          const cleanPhone = phone.replace(/\D/g, '');
+          const dummyEmail = `tg_${cleanPhone || Date.now()}@skokova-edu.ru`;
+          const dummyPassword = `Tg_${cleanPhone || Date.now()}!`;
+
+          const { data: authUserData, error: authErr } = await supabase.auth.admin.createUser({
+            email: dummyEmail,
+            password: dummyPassword,
+            email_confirm: true,
+            user_metadata: {
+              full_name: parentNameOnly,
+              telegram_handle: username,
+            },
           });
+
+          if (authErr) {
+            console.error('Supabase Auth user creation error:', authErr);
+          }
+
+          if (authUserData?.user) {
+            parentUserId = authUserData.user.id;
+            await supabase.from('profiles').upsert({
+              id: parentUserId,
+              full_name: parentNameOnly,
+              phone: phone,
+              telegram_handle: username || null,
+            });
+          }
         }
 
         // 2. Автоматическое создание/привязка ребёнка в таблице `children`
