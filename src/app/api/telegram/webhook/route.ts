@@ -205,17 +205,24 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
-// Очистка старых сообщений диалога
+// Очистка старых сообщений диалога (СОХРАНЯЯ при этом приветствие /start!)
 async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
   const idsToDelete = new Set<number>();
+  const startMsgIds = session.start_message_ids || [];
+
   if (session.last_message_ids && Array.isArray(session.last_message_ids)) {
-    session.last_message_ids.forEach((id: number) => idsToDelete.add(id));
+    session.last_message_ids.forEach((id: number) => {
+      if (!startMsgIds.includes(id)) {
+        idsToDelete.add(id);
+      }
+    });
   }
-  if (extraMsgId) {
+
+  if (extraMsgId && !startMsgIds.includes(extraMsgId)) {
     idsToDelete.add(extraMsgId);
   }
 
-  session.last_message_ids = [];
+  session.last_message_ids = (session.last_message_ids || []).filter((id: number) => startMsgIds.includes(id));
 
   for (const mid of Array.from(idsToDelete)) {
     if (!mid) continue;
@@ -445,7 +452,14 @@ async function renderMainMenuScreen(botToken: string, chatId: number, firstName:
     `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
     `✨ *Выберите нужный раздел на интерактивных кнопках ниже:*`;
 
-  await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
+  const res = await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
+  const startId = res?.result?.message_id || messageId;
+  if (startId) {
+    if (!session.start_message_ids) session.start_message_ids = [];
+    if (!session.start_message_ids.includes(startId)) {
+      session.start_message_ids.push(startId);
+    }
+  }
 }
 
 async function renderPersonalCabinetScreen(
@@ -642,6 +656,31 @@ async function findParentTelegramId(supabase: any, bookingObj: any): Promise<num
       if (matchedUser?.email?.startsWith('tg_')) {
         const match = matchedUser.email.match(/tg_(\d+)@/);
         if (match) return Number(match[1]);
+      }
+    } catch (e) {}
+  }
+
+  // 3. Поиск по номеру телефона
+  if (bookingObj.phone) {
+    try {
+      const cleanPhoneDigits = bookingObj.phone.replace(/\D/g, '');
+      const last10 = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
+
+      if (last10) {
+        const { data: allProfiles } = await supabase.from('profiles').select('*');
+        const matchedProfile = allProfiles?.find((p: any) => p.phone && p.phone.replace(/\D/g, '').endsWith(last10));
+
+        if (matchedProfile?.id) {
+          const { data: uRes } = await supabase.auth.admin.getUserById(matchedProfile.id);
+          const tgId = uRes?.user?.user_metadata?.telegram_id;
+          if (tgId) return Number(tgId);
+
+          const email = uRes?.user?.email || '';
+          if (email.startsWith('tg_')) {
+            const match = email.match(/tg_(\d+)@/);
+            if (match) return Number(match[1]);
+          }
+        }
       }
     } catch (e) {}
   }
@@ -920,6 +959,12 @@ export async function POST(req: Request) {
 
       // Главное меню (/start, /menu, Назад, Отмена)
       if (text.startsWith('/start') || text === '/menu' || text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
+        if (text.startsWith('/start') && userMsgId) {
+          if (!session.start_message_ids) session.start_message_ids = [];
+          if (!session.start_message_ids.includes(userMsgId)) {
+            session.start_message_ids.push(userMsgId);
+          }
+        }
         syncBotDescription(botToken);
         await renderMainMenuScreen(botToken, chatId, firstName, session);
         await setUserSession(supabase, parentUserId, session);
