@@ -53,10 +53,10 @@ export async function POST(req: Request) {
               { text: '📅 1) Записаться', web_app: { url: twaUrl } },
             ],
             [
-              { text: '👤 2) Мой кабинет', web_app: { url: `${baseUrl}/my-dashboard` } },
+              { text: '👤 2) Мой кабинет', callback_data: 'native_cabinet' },
             ],
             [
-              { text: '📚 3) Программы и тарифы', web_app: { url: `${baseUrl}/twa#programs` } },
+              { text: '📚 3) Программы и тарифы', callback_data: 'native_programs' },
             ],
             [
               { text: '💳 4) Реквизиты оплаты', callback_data: 'payment_info' },
@@ -237,6 +237,103 @@ export async function POST(req: Request) {
 
       const [action, bookingId] = callbackData.split('_');
       const supabase = createAdminClient();
+
+      if (callbackData === 'native_programs') {
+        let programsMsg = `📚 *ПРОГРАММЫ ОНЛАЙН-ЗАНЯТИЙ И ТАРИФЫ*\n\n` +
+          `*Юлия Павловна* — Эксперт по развитию и подготовке к школе с опытом более 30 лет.\n\n`;
+
+        SERVICES.forEach((service, idx) => {
+          programsMsg += `*${idx + 1}. ${service.title}*\n` +
+            `⏱ Длительность: ${service.duration_minutes} минут\n` +
+            `💰 Стоимость: *${service.price} ₽*\n` +
+            `📖 ${service.description}\n\n`;
+        });
+
+        programsMsg += `💡 *Тарифы:* Онлайн-урок — *600 ₽* / 40 мин, Оффлайн — *800 ₽* / 40 мин.`;
+
+        const inlineKb = {
+          inline_keyboard: [
+            [{ text: '📅 Записаться на урок', web_app: { url: twaUrl } }],
+          ],
+        };
+
+        await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id }),
+        });
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: programsMsg,
+            parse_mode: 'Markdown',
+            reply_markup: inlineKb,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      if (callbackData === 'native_cabinet') {
+        const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '';
+        const firstName = callbackQuery.from?.first_name || 'Гость';
+
+        let query = supabase.from('bookings').select('*').order('created_at', { ascending: false });
+        if (username) {
+          query = query.ilike('telegram_handle', username);
+        } else {
+          query = query.eq('phone', '');
+        }
+
+        const { data: bookings } = await query.limit(5);
+
+        let cabMsg = `👤 *ЛИЧНЫЙ КАБИНЕТ РОДИТЕЛЯ*\n` +
+          `Telegram: ${username || firstName}\n\n`;
+
+        if (!bookings || bookings.length === 0) {
+          cabMsg += `У вас пока нет активных записей.\n` +
+            `Нажмите «📅 Записаться» ниже для выбора времени урока!`;
+        } else {
+          cabMsg += `📋 *Ваши последние записи:*\n\n`;
+          bookings.forEach((b: any, i: number) => {
+            const statusStr = b.status === 'confirmed' ? '✅ Подтверждена' :
+              b.status === 'pending_payment' ? '⏳ Ожидает оплаты' :
+              b.status === 'receipt_uploaded' ? '📑 Чек на проверке' : b.status;
+            cabMsg += `*${i + 1}. ${b.service_title}*\n` +
+              `👶 Ученик: ${b.child_name}\n` +
+              `📌 Статус: *${statusStr}*\n` +
+              `💰 Сумма: ${b.price} ₽\n\n`;
+          });
+        }
+
+        const inlineKb = {
+          inline_keyboard: [
+            [{ text: '📅 Новая запись', web_app: { url: twaUrl } }],
+          ],
+        };
+
+        await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: callbackQuery.id }),
+        });
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: cabMsg,
+            parse_mode: 'Markdown',
+            reply_markup: inlineKb,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
 
       if (callbackData === 'payment_info') {
         const { data: settings } = await supabase.from('settings').select('*').limit(1);
