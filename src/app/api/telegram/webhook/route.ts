@@ -49,7 +49,7 @@ async function getOrCreateUserProfile(
   const email = `tg_${telegramId}@skokova-edu.ru`;
   const password = `Tg_${telegramId}!`;
 
-  // 1. Поиск по telegram_handle в существующих профилях (без учета регистра)
+  // 1. Поиск по telegram_handle в существующих профилях
   if (username) {
     const handleWithoutAt = username.replace('@', '').toLowerCase();
     const { data: allProfiles } = await supabase.from('profiles').select('*');
@@ -69,7 +69,7 @@ async function getOrCreateUserProfile(
     }
   }
 
-  // 2. Поиск по номеру телефона (сравнение последних 10 цифр с профилями сайта)
+  // 2. Поиск по номеру телефона
   if (last10Phone) {
     const { data: allProfiles } = await supabase.from('profiles').select('*');
     const existingByPhone = allProfiles?.find((p: any) =>
@@ -87,7 +87,6 @@ async function getOrCreateUserProfile(
       return existingByPhone.id;
     }
 
-    // Поиск по предыдущим бронированиям с сайта
     const { data: pastBookings } = await supabase
       .from('bookings')
       .select('user_id, parent_name, phone')
@@ -110,7 +109,7 @@ async function getOrCreateUserProfile(
     }
   }
 
-  // 3. Поиск по email/telegramId в Supabase Auth
+  // 3. Поиск по Supabase Auth
   const { data: authList } = await supabase.auth.admin.listUsers();
   const existingAuthUser = authList?.users?.find(
     (u: any) => u.email === email || u.user_metadata?.telegram_id === telegramId
@@ -128,7 +127,7 @@ async function getOrCreateUserProfile(
     return existingAuthUser.id;
   }
 
-  // 4. СОЗДАНИЕ НОВОГО ПРОФИЛЯ: Только если пользователь впервые
+  // 4. Создание нового профиля
   const { data: authUserData, error: authErr } = await supabase.auth.admin.createUser({
     email: email,
     password: password,
@@ -158,7 +157,7 @@ async function getOrCreateUserProfile(
   return parentUserId;
 }
 
-// Персистентность сессий пользователей в Supabase Auth user_metadata
+// Персистентность сессий в Supabase Auth
 async function getUserSession(supabase: any, parentUserId: string) {
   if (!parentUserId) return {};
   try {
@@ -196,7 +195,7 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
-// Очистка старых сообщений для поддержания идеального порядка в чате
+// Удаление предыдущих сообщений для поддержания 100% порядка в чате
 async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
   const idsToDelete = [...(session.last_message_ids || [])];
   if (extraMsgId) idsToDelete.push(extraMsgId);
@@ -212,12 +211,12 @@ async function cleanupPreviousMessages(botToken: string, chatId: number, session
         body: JSON.stringify({ chat_id: chatId, message_id: mid }),
       });
     } catch (e) {
-      // Игнорируем если уже удалено или старше 48ч
+      // Silent ignore
     }
   }
 }
 
-// Отправка нового сообщения с сохранением message_id в сессии
+// Отправка и трекинг сообщений
 async function sendAndTrackMessage(
   botToken: string,
   chatId: number,
@@ -241,7 +240,7 @@ async function sendAndTrackMessage(
   return json;
 }
 
-// Построитель компактной сетки выбора слотов даты и времени (Инлайн-клавиатура < 64 байт!)
+// Построитель слотов даты и времени
 async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
   const nowIso = new Date().toISOString();
 
@@ -332,6 +331,176 @@ async function syncBotDescription(botToken: string) {
   }
 }
 
+// -------------------------------------------------------------
+// ЕДИНАЯ ИНЛАЙН-КЛАВИАТУРА ГЛАВНОГО МЕНЮ БОТА
+// -------------------------------------------------------------
+const mainInlineKeyboard = {
+  inline_keyboard: [
+    [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+    [{ text: '👤 Мой кабинет', callback_data: 'menu_my' }],
+    [{ text: '📚 Программы и тарифы', callback_data: 'menu_programs' }],
+    [{ text: '💳 Реквизиты оплаты', callback_data: 'menu_requisites' }],
+    [{ text: '💬 Связаться с педагогом', callback_data: 'menu_contact' }],
+  ],
+};
+
+const yuliaContactInlineKb = {
+  inline_keyboard: [
+    [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
+    [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
+  ],
+};
+
+async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any) {
+  const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
+    `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
+    `✨ *Выберите нужный раздел на интерактивных кнопках ниже:*`;
+
+  await sendAndTrackMessage(botToken, chatId, {
+    text: welcomeText,
+    parse_mode: 'Markdown',
+    reply_markup: mainInlineKeyboard,
+  }, session);
+}
+
+async function renderPersonalCabinetScreen(
+  botToken: string,
+  chatId: number,
+  parentUserId: string,
+  firstName: string,
+  username: string,
+  supabase: any,
+  session: any
+) {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', parentUserId)
+    .maybeSingle();
+
+  const { data: childrenList } = await supabase
+    .from('children')
+    .select('*')
+    .eq('parent_id', parentUserId);
+
+  let bookingsQuery = supabase
+    .from('bookings')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (username) {
+    bookingsQuery = bookingsQuery.or(`user_id.eq.${parentUserId},telegram_handle.ilike.${username}`);
+  } else {
+    bookingsQuery = bookingsQuery.eq('user_id', parentUserId);
+  }
+
+  const { data: userBookings } = await bookingsQuery.limit(5);
+
+  const parentName = profile?.full_name || firstName;
+  const rawPhone = profile?.phone || '';
+  const parentPhone = (rawPhone && rawPhone.replace(/\D/g, '').length >= 6) ? rawPhone : 'не указан';
+
+  let cabMsg = `👤 *ЛИЧНЫЙ КАБИНЕТ РОДИТЕЛЯ*\n\n` +
+    `📌 *Данные профиля:*\n` +
+    `• *Родитель:* ${parentName}\n` +
+    `• *Телефон:* ${parentPhone === 'не указан' ? 'не указан' : `\`${parentPhone}\``}\n` +
+    `• *Telegram:* ${username || firstName}\n`;
+
+  if (childrenList && childrenList.length > 0) {
+    const kidsStr = childrenList.map((c: any) => c.name).join(', ');
+    cabMsg += `• *Ученики:* ${kidsStr}\n`;
+  }
+
+  const allBookings = userBookings || [];
+  const pendingCount = allBookings.filter((b: any) => b.status === 'pending_payment').length;
+  const confirmedCount = allBookings.filter((b: any) => b.status === 'confirmed').length;
+
+  cabMsg += `\n📊 *Статистика записей:*\n` +
+    `• Всего записей: *${allBookings.length}*\n` +
+    `• Ожидают оплаты: *${pendingCount}*\n` +
+    `• Подтверждено: *${confirmedCount}*\n\n` +
+    `Выберите нужный раздел на кнопках ниже:`;
+
+  const cabinetInlineKb = {
+    inline_keyboard: [
+      [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+      [{ text: '📋 История заказов', callback_data: 'show_history' }],
+      [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
+      [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
+      [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
+    ],
+  };
+
+  await sendAndTrackMessage(botToken, chatId, {
+    text: cabMsg,
+    parse_mode: 'Markdown',
+    reply_markup: cabinetInlineKb,
+  }, session);
+}
+
+async function renderProgramsScreen(botToken: string, chatId: number, session: any) {
+  let programsMsg = `📚 *ПРОГРАММЫ ЗАНЯТИЙ И ТАРИФЫ*\n\n` +
+    `*Юлия Павловна* — Эксперт по развитию и подготовке к школе с опытом более 30 лет.\n\n`;
+
+  SERVICES.forEach((service, idx) => {
+    programsMsg += `*${idx + 1}. ${service.title}*\n` +
+      `⏱ Длительность: ${service.duration_minutes} минут\n` +
+      `💰 Стоимость: *${service.price} ₽*\n` +
+      `📖 ${service.description}\n\n`;
+  });
+
+  programsMsg += `💡 *Тарифы:* Онлайн-урок — *600 ₽* / 40 мин, Оффлайн — *800 ₽* / 40 мин.`;
+
+  const programsInlineKb = {
+    inline_keyboard: [
+      [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
+      [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
+      [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
+    ],
+  };
+
+  await sendAndTrackMessage(botToken, chatId, {
+    text: programsMsg,
+    parse_mode: 'Markdown',
+    reply_markup: programsInlineKb,
+  }, session);
+}
+
+async function renderRequisitesScreen(botToken: string, chatId: number, supabase: any, session: any) {
+  const reqs = await getRequisites(supabase);
+
+  let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
+  if (reqs.cardNumber) {
+    payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
+  }
+  payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
+    `👤 *Получатель:* ${reqs.recipient}`;
+
+  const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
+    `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
+
+  await sendAndTrackMessage(botToken, chatId, {
+    text: payMsg,
+    parse_mode: 'Markdown',
+    reply_markup: yuliaContactInlineKb,
+  }, session);
+}
+
+async function renderContactScreen(botToken: string, chatId: number, session: any) {
+  const contactMsg = `👩‍🏫 *СВЯЗЬ С ПЕДАГОГОМ*\n\n` +
+    `*Скокова Юлия Павловна*\n` +
+    `Эксперт по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
+    `📞 Телефон: +7 (960) 837-47-06\n\n` +
+    `Нажмите кнопку ниже, чтобы перейти в личный чат с Юлией Павловной:`;
+
+  await sendAndTrackMessage(botToken, chatId, {
+    text: contactMsg,
+    parse_mode: 'Markdown',
+    disable_web_page_preview: true,
+    reply_markup: yuliaContactInlineKb,
+  }, session);
+}
+
 export async function POST(req: Request) {
   try {
     const update = await req.json();
@@ -342,42 +511,6 @@ export async function POST(req: Request) {
 
     const teacherChatId = sanitizeEnv(process.env.TELEGRAM_TEACHER_CHAT_ID) || '-5128191766';
     const supabase = createAdminClient();
-
-    // Главное постоянное меню Telegram бота (Bottom Reply Keyboard) - ВСЕГДА АКТИВНО И ЗАКРЕПЛЕНО
-    const mainReplyKeyboard = {
-      keyboard: [
-        [
-          { text: '📅 Записаться на урок' },
-          { text: '👤 Мой кабинет' },
-        ],
-        [
-          { text: '📚 Программы и тарифы' },
-          { text: '💳 Реквизиты оплаты' },
-        ],
-        [
-          { text: '💬 Связаться с педагогом' },
-        ],
-      ],
-      resize_keyboard: true,
-      is_persistent: true,
-    };
-
-    // Клавиатура отмены / возврата
-    const cancelKeyboard = {
-      keyboard: [
-        [{ text: '⬅️ Назад в главное меню' }],
-      ],
-      resize_keyboard: true,
-      is_persistent: true,
-    };
-
-    // Прямая инлайн-кнопка для связи с Юлией Павловной
-    const yuliaContactInlineKb = {
-      inline_keyboard: [
-        [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
-        [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
-      ],
-    };
 
     // -------------------------------------------------------------
     // 1. ОБРАБОТКА ПОЛУЧЕНИЯ ФОТО / ЧЕКА В ЧАТЕ TELEGRAM
@@ -395,8 +528,6 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
-
-      // Удаляем сообщение пользователя с чеком и предыдущие сообщения бота
       await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
       const { data: bookings } = await supabase
@@ -465,23 +596,20 @@ export async function POST(req: Request) {
           parse_mode: 'Markdown',
           reply_markup: yuliaContactInlineKb,
         }, session);
-
-        await setUserSession(supabase, parentUserId, session);
       } else {
         await sendAndTrackMessage(botToken, chatId, {
-          text: `📑 Мы получили Ваш чек. Чтобы привязать его к записи, сначала нажмите *«📅 Записаться на урок»* в меню ниже.`,
+          text: `📑 Мы получили Ваш чек. Для выбора времени нажмите кнопку ниже:`,
           parse_mode: 'Markdown',
-          reply_markup: mainReplyKeyboard,
+          reply_markup: mainInlineKeyboard,
         }, session);
-
-        await setUserSession(supabase, parentUserId, session);
       }
 
+      await setUserSession(supabase, parentUserId, session);
       return NextResponse.json({ success: true });
     }
 
     // -------------------------------------------------------------
-    // 2. ОБРАБОТКА СООБЩЕНИЙ, КОМАНД И КОНТАКТОВ В ЧАТЕ TELEGRAM
+    // 2. ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ И КОМАНД В ЧАТЕ TELEGRAM
     // -------------------------------------------------------------
     if (update.message && (update.message.text !== undefined || update.message.contact !== undefined)) {
       const chatId = update.message.chat.id;
@@ -499,15 +627,34 @@ export async function POST(req: Request) {
 
       let session = await getUserSession(supabase, parentUserId);
 
-      // Удаляем предыдущие сообщения бота и текущее сообщение пользователя (кроме /start при первом входе)
-      if (!text.startsWith('/start')) {
-        await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
-      }
+      // Удаляем сообщение пользователя и старый экран
+      await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
-      // ПРИОРИТЕТ 1: Если нажата кнопка главного меню или Отмена -> Сразу очищаем шаг записи и выполняем меню!
+      // Удаляем старые нижние клавиатуры если они были у пользователя
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: '...',
+            reply_markup: { remove_keyboard: true },
+          }),
+        }).then(r => r.json()).then(j => {
+          if (j.result?.message_id) {
+            fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: chatId, message_id: j.result.message_id }),
+            });
+          }
+        });
+      } catch (e) {}
+
+      // Проверка команд встроенного меню
       const isMenuCommand = 
         text.includes('Назад') || text.includes('Отмена') || text === '/cancel' ||
-        text.startsWith('/start') ||
+        text.startsWith('/start') || text === '/menu' ||
         text.includes('Записаться') || text === '/book' ||
         text.includes('Мой кабинет') || text === '/my' ||
         text.includes('Программы') || text === '/programs' ||
@@ -519,245 +666,48 @@ export async function POST(req: Request) {
         session = {};
       }
 
-      // Отмена / Назад в главное меню
-      if (text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👌 Вы вернулись в главное меню. Выберите нужный раздел:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
-        await setUserSession(supabase, parentUserId, session);
-        return NextResponse.json({ success: true });
-      }
-
-      // Команда /start -> Сразу создаем Личный кабинет в Supabase
-      if (text.startsWith('/start')) {
+      // Главное меню (/start, /menu, Назад, Отмена)
+      if (text.startsWith('/start') || text === '/menu' || text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
         syncBotDescription(botToken);
-
-        const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
-          `Вас приветствует бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
-          `✨ *Ваш Личный кабинет создан! Все возможности доступны ниже:*\n` +
-          `• 📅 Запись на уроки и выбор времени\n` +
-          `• 👤 Кабинет родителя и история занятий\n` +
-          `• 📚 Программы, тарифы и реквизиты СБП\n\n` +
-          `Выберите нужный раздел на нижней клавиатуре:`;
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: welcomeText,
-          parse_mode: 'Markdown',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
+        await renderMainMenuScreen(botToken, chatId, firstName, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📅 Записаться на урок" -> ШАГ 1: Перевод меню на выбор тарифа (Инлайн-кнопки)
-      if (text.includes('Записаться') || text === '/book') {
-        session = { step: 'select_service' };
-
-        let servicesMsg = `🎯 *ШАГ 1: ВЫБЕРИТЕ ПРОГРАММУ ЗАНЯТИЙ*\n\n` +
-          `1️⃣ *Онлайн-занятие (Индивидуально)* — 600 ₽ / 40 мин\n` +
-          `Индивидуальный урок по математике, чтению или грамоте через Zoom / Яндекс Телемост.\n\n` +
-          `2️⃣ *Оффлайн-занятие (В кабинете)* — 800 ₽ / 40 мин\n` +
-          `Очный урок в оборудованном кабинете педагога в г. Тольятти.\n\n` +
-          `Нажмите на нужную программу ниже:`;
-
-        const serviceInlineKeyboard = {
-          inline_keyboard: [
-            [{ text: '👉 Онлайн-занятие (600 ₽)', callback_data: 'service_online' }],
-            [{ text: '👉 Оффлайн-занятие (800 ₽)', callback_data: 'service_offline' }],
-            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
-          ],
-        };
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: servicesMsg,
-          parse_mode: 'Markdown',
-          reply_markup: serviceInlineKeyboard,
-        }, session);
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
-        await setUserSession(supabase, parentUserId, session);
-        return NextResponse.json({ success: true });
-      }
-
-      // Кнопка "📚 Программы и тарифы"
-      if (text.includes('Программы') || text === '/programs') {
-        let programsMsg = `📚 *ПРОГРАММЫ ОНЛАЙН-ЗАНЯТИЙ И ТАРИФЫ*\n\n` +
-          `*Юлия Павловна* — Эксперт по развитию и подготовке к школе с опытом более 30 лет.\n\n`;
-
-        SERVICES.forEach((service, idx) => {
-          programsMsg += `*${idx + 1}. ${service.title}*\n` +
-            `⏱ Длительность: ${service.duration_minutes} минут\n` +
-            `💰 Стоимость: *${service.price} ₽*\n` +
-            `📖 ${service.description}\n\n`;
-        });
-
-        programsMsg += `💡 *Тарифы:* Онлайн-урок — *600 ₽* / 40 мин, Оффлайн — *800 ₽* / 40 мин.\n\n` +
-          `Для записи нажмите кнопку *«📅 Записаться на урок»* в меню ниже.`;
-
-        const programsInlineKb = {
-          inline_keyboard: [
-            [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
-            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
-          ],
-        };
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: programsMsg,
-          parse_mode: 'Markdown',
-          reply_markup: programsInlineKb,
-        }, session);
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
-        await setUserSession(supabase, parentUserId, session);
-        return NextResponse.json({ success: true });
-      }
-
-      // Кнопка "👤 Мой кабинет"
+      // Мой кабинет
       if (text.includes('Мой кабинет') || text === '/my') {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', parentUserId)
-          .maybeSingle();
-
-        const { data: childrenList } = await supabase
-          .from('children')
-          .select('*')
-          .eq('parent_id', parentUserId);
-
-        let bookingsQuery = supabase
-          .from('bookings')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (username) {
-          bookingsQuery = bookingsQuery.or(`user_id.eq.${parentUserId},telegram_handle.ilike.${username}`);
-        } else {
-          bookingsQuery = bookingsQuery.eq('user_id', parentUserId);
-        }
-
-        const { data: userBookings } = await bookingsQuery.limit(5);
-
-        const parentName = profile?.full_name || firstName;
-        const rawPhone = profile?.phone || '';
-        const parentPhone = (rawPhone && rawPhone.replace(/\D/g, '').length >= 6) ? rawPhone : 'не указан';
-
-        let cabMsg = `👤 *ЛИЧНЫЙ КАБИНЕТ РОДИТЕЛЯ*\n\n` +
-          `📌 *Данные профиля:*\n` +
-          `• *Родитель:* ${parentName}\n` +
-          `• *Телефон:* ${parentPhone === 'не указан' ? 'не указан' : `\`${parentPhone}\``}\n` +
-          `• *Telegram:* ${username || firstName}\n`;
-
-        if (childrenList && childrenList.length > 0) {
-          const kidsStr = childrenList.map((c: any) => c.name).join(', ');
-          cabMsg += `• *Ученики:* ${kidsStr}\n`;
-        }
-
-        const allBookings = userBookings || [];
-        const pendingCount = allBookings.filter((b: any) => b.status === 'pending_payment').length;
-        const confirmedCount = allBookings.filter((b: any) => b.status === 'confirmed').length;
-
-        cabMsg += `\n📊 *Статистика записей:*\n` +
-          `• Всего записей: *${allBookings.length}*\n` +
-          `• Ожидают оплаты: *${pendingCount}*\n` +
-          `• Подтверждено: *${confirmedCount}*\n\n` +
-          `Выберите нужный раздел на кнопках ниже:`;
-
-        const cabinetInlineKb = {
-          inline_keyboard: [
-            [{ text: '📅 Записаться на урок', callback_data: 'service_online' }],
-            [{ text: '📋 История заказов', callback_data: 'show_history' }],
-            [{ text: '💳 Реквизиты и оплата', callback_data: 'show_requisites' }],
-            [{ text: '💬 Написать в Telegram Юлии', url: 'https://t.me/+79608374706' }],
-            [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
-          ],
-        };
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: cabMsg,
-          parse_mode: 'Markdown',
-          reply_markup: cabinetInlineKb,
-        }, session);
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
+        await renderPersonalCabinetScreen(botToken, chatId, parentUserId, firstName, username, supabase, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "💳 Реквизиты оплаты"
+      // Программы и тарифы
+      if (text.includes('Программы') || text === '/programs') {
+        await renderProgramsScreen(botToken, chatId, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Реквизиты
       if (text.includes('Реквизиты') || text === '/payment') {
-        const reqs = await getRequisites(supabase);
-
-        let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
-        if (reqs.cardNumber) {
-          payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
-        }
-        payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
-          `👤 *Получатель:* ${reqs.recipient}`;
-
-        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
-          `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: payMsg,
-          parse_mode: 'Markdown',
-          reply_markup: yuliaContactInlineKb,
-        }, session);
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
+        await renderRequisitesScreen(botToken, chatId, supabase, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "💬 Связаться с педагогом"
+      // Связаться с педагогом
       if (text.includes('Педагог') || text.includes('Связаться')) {
-        const contactMsg = `👩‍🏫 *СВЯЗЬ С ПЕДАГОГОМ*\n\n` +
-          `*Скокова Юлия Павловна*\n` +
-          `Эксперт по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
-          `📞 Телефон: +7 (960) 837-47-06\n\n` +
-          `Нажмите кнопку ниже, чтобы перейти в личный чат с Юлией Павловной:`;
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: contactMsg,
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true,
-          reply_markup: yuliaContactInlineKb,
-        }, session);
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
+        await renderContactScreen(botToken, chatId, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
       // -------------------------------------------------------------
-      // ПОШАГОВЫЙ ДИАЛОГ ЗАПИСИ НА УРОК (Только если не нажата кнопка меню!)
+      // ПОШАГОВЫЙ ДИАЛОГ ЗАПИСИ НА УРОК (Ввод текста пользователем)
       // -------------------------------------------------------------
 
-      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия
-      if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
+      // ШАГ 1 -> ШАГ 2: Выбор программы по тексту
+      if (session.step === 'select_service' || text.includes('Записаться') || text === '/book') {
         const isOffline = text.includes('Оффлайн');
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
@@ -783,16 +733,11 @@ export async function POST(req: Request) {
           reply_markup: { inline_keyboard },
         }, session);
 
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Выберите удобный слот выше или вернитесь в главное меню:',
-          reply_markup: cancelKeyboard,
-        }, session);
-
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 2 -> ШАГ 3: Если время введено сообщением вручную
+      // ШАГ 2 -> ШАГ 3: Время введено текстом
       if (session.step === 'select_slot_time' && text) {
         session.slot_time = text.replace('⏰', '').trim();
         session.step = 'awaiting_parent_name';
@@ -801,17 +746,21 @@ export async function POST(req: Request) {
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
           `Напишите Ваше имя (например: \`${firstName}\`):`;
 
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
+        };
+
         await sendAndTrackMessage(botToken, chatId, {
           text: parentPromptMsg,
           parse_mode: 'Markdown',
-          reply_markup: cancelKeyboard,
+          reply_markup: cancelInlineKb,
         }, session);
 
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 3 -> ШАГ 4: Запрос имени ребёнка
+      // ШАГ 3 -> ШАГ 4: Имя родителя -> Имя ребёнка
       if (session.step === 'awaiting_parent_name' && text) {
         session.parent_name = text;
         session.step = 'awaiting_child_name';
@@ -820,17 +769,21 @@ export async function POST(req: Request) {
           `👶 *ШАГ 4: Как зовут ребёнка?*\n` +
           `Напишите только имя ребёнка (например: \`Артём\`):`;
 
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
+        };
+
         await sendAndTrackMessage(botToken, chatId, {
           text: childNamePromptMsg,
           parse_mode: 'Markdown',
-          reply_markup: cancelKeyboard,
+          reply_markup: cancelInlineKb,
         }, session);
 
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 4 -> ШАГ 5: Запрос возраста / класса ребёнка
+      // ШАГ 4 -> ШАГ 5: Имя ребёнка -> Возраст/Класс
       if (session.step === 'awaiting_child_name' && text) {
         session.child_name = text;
         session.step = 'awaiting_child_age_grade';
@@ -839,32 +792,35 @@ export async function POST(req: Request) {
           `🎓 *ШАГ 5: Укажите возраст или класс ребёнка*\n` +
           `Напишите в сообщении (например: \`6 лет, Подготовка к школе\` или \`3 класс\`):`;
 
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
+        };
+
         await sendAndTrackMessage(botToken, chatId, {
           text: agePromptMsg,
           parse_mode: 'Markdown',
-          reply_markup: cancelKeyboard,
+          reply_markup: cancelInlineKb,
         }, session);
 
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 5 -> ШАГ 6: Запрос номера телефона
+      // ШАГ 5 -> ШАГ 6: Возраст -> Телефон
       if (session.step === 'awaiting_child_age_grade' && text) {
         session.child_grade = text;
         session.step = 'awaiting_phone';
 
         const phonePromptMsg = `👍 Возраст / Класс: *${text}*\n\n` +
           `📱 *ШАГ 6: Укажите Ваш контактный номер телефона*\n` +
-          `Нажмите кнопку *«📱 Отправить мой номер телефона»* внизу или введите номер вручную:`;
+          `Нажмите кнопку ниже или введите номер вручную:`;
 
         const contactKb = {
           keyboard: [
             [{ text: '📱 Отправить мой номер телефона', request_contact: true }],
-            [{ text: '⬅️ Назад в главное меню' }],
           ],
           resize_keyboard: true,
-          is_persistent: true,
+          one_time_keyboard: true,
         };
 
         await sendAndTrackMessage(botToken, chatId, {
@@ -877,7 +833,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 6: Сохранение бронирования в Supabase DB + создание профиля родителя и ребёнка
+      // ШАГ 6: Телефон получен -> Создание записи
       if (session.step === 'awaiting_phone' || update.message.contact !== undefined) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
@@ -960,15 +916,15 @@ export async function POST(req: Request) {
           reply_markup: yuliaContactInlineKb,
         }, session);
 
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
         session.step = undefined;
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
+
+      // Любой другой нераспознанный текст -> Рендерим главное инлайн меню
+      await renderMainMenuScreen(botToken, chatId, firstName, session);
+      await setUserSession(supabase, parentUserId, session);
+      return NextResponse.json({ success: true });
     }
 
     // -------------------------------------------------------------
@@ -995,20 +951,53 @@ export async function POST(req: Request) {
 
       let session = await getUserSession(supabase, parentUserId);
 
-      // Клик по "⬅️ Назад в главное меню"
+      // Клик "⬅️ Назад в главное меню"
       if (callbackData === 'go_main_menu') {
         await cleanupPreviousMessages(botToken, chatId, session, messageId);
         await clearUserSession(supabase, parentUserId);
         session = {};
 
-        const welcomeText = `👌 Вы вернулись в главное меню. Выберите нужный раздел:`;
+        await renderMainMenuScreen(botToken, chatId, callbackQuery.from?.first_name || 'Родитель', session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
 
-        await sendAndTrackMessage(botToken, chatId, {
-          text: welcomeText,
-          parse_mode: 'Markdown',
-          reply_markup: mainReplyKeyboard,
-        }, session);
+      // Клик "👤 Мой кабинет"
+      if (callbackData === 'menu_my') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
+        await renderPersonalCabinetScreen(
+          botToken,
+          chatId,
+          parentUserId,
+          callbackQuery.from?.first_name || 'Родитель',
+          callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '',
+          supabase,
+          session
+        );
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
 
+      // Клик "📚 Программы и тарифы"
+      if (callbackData === 'menu_programs') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
+        await renderProgramsScreen(botToken, chatId, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Клик "💳 Реквизиты оплаты"
+      if (callbackData === 'menu_requisites') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
+        await renderRequisitesScreen(botToken, chatId, supabase, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
+      // Клик "💬 Связаться с педагогом"
+      if (callbackData === 'menu_contact') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
+        await renderContactScreen(botToken, chatId, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -1090,11 +1079,6 @@ export async function POST(req: Request) {
           reply_markup: historyInlineKb,
         }, session);
 
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -1102,30 +1086,7 @@ export async function POST(req: Request) {
       // Клик по вызову реквизитов из кабинета
       if (callbackData === 'show_requisites') {
         await cleanupPreviousMessages(botToken, chatId, session, messageId);
-
-        const reqs = await getRequisites(supabase);
-
-        let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
-        if (reqs.cardNumber) {
-          payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
-        }
-        payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
-          `👤 *Получатель:* ${reqs.recipient}`;
-
-        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
-          `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: payMsg,
-          parse_mode: 'Markdown',
-          reply_markup: yuliaContactInlineKb,
-        }, session);
-
-        await sendAndTrackMessage(botToken, chatId, {
-          text: '👇 Главное меню:',
-          reply_markup: mainReplyKeyboard,
-        }, session);
-
+        await renderRequisitesScreen(botToken, chatId, supabase, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
@@ -1196,6 +1157,10 @@ export async function POST(req: Request) {
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
           `Напишите Ваше имя (например: \`${callbackQuery.from?.first_name || 'Родитель'}\`):`;
 
+        const cancelInlineKb = {
+          inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
+        };
+
         await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1204,7 +1169,7 @@ export async function POST(req: Request) {
             message_id: messageId,
             text: updatedSlotText,
             parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [] },
+            reply_markup: cancelInlineKb,
           }),
         });
 
