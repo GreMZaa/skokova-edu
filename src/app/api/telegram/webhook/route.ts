@@ -195,7 +195,7 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
-// Удаление предыдущих сообщений для поддержания 100% порядка в чате
+// Очистка только старых отработанных сообщений при вводе нового текста
 async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
   const idsToDelete = [...(session.last_message_ids || [])];
   if (extraMsgId) idsToDelete.push(extraMsgId);
@@ -216,7 +216,7 @@ async function cleanupPreviousMessages(botToken: string, chatId: number, session
   }
 }
 
-// Отправка и трекинг сообщений
+// Отправка нового сообщения с сохранением message_id
 async function sendAndTrackMessage(
   botToken: string,
   chatId: number,
@@ -238,6 +238,48 @@ async function sendAndTrackMessage(
     session.last_message_ids.push(json.result.message_id);
   }
   return json;
+}
+
+// Редактирование существующего сообщения на месте (0ms миганий, без удаления)
+async function editOrSendMessage(
+  botToken: string,
+  chatId: number,
+  messageId: number | undefined,
+  text: string,
+  replyMarkup: any,
+  session: any,
+  disablePreview: boolean = false
+) {
+  if (messageId) {
+    try {
+      const editRes = await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          text: text,
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup,
+          disable_web_page_preview: disablePreview,
+        }),
+      });
+
+      const editJson = await editRes.json();
+      if (editJson.ok) {
+        return editJson;
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+
+  return await sendAndTrackMessage(botToken, chatId, {
+    text: text,
+    parse_mode: 'Markdown',
+    disable_web_page_preview: disablePreview,
+    reply_markup: replyMarkup,
+  }, session);
 }
 
 // Построитель слотов даты и времени
@@ -351,16 +393,12 @@ const yuliaContactInlineKb = {
   ],
 };
 
-async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any) {
+async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any, messageId?: number) {
   const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
     `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
     `✨ *Выберите нужный раздел на интерактивных кнопках ниже:*`;
 
-  await sendAndTrackMessage(botToken, chatId, {
-    text: welcomeText,
-    parse_mode: 'Markdown',
-    reply_markup: mainInlineKeyboard,
-  }, session);
+  await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
 }
 
 async function renderPersonalCabinetScreen(
@@ -370,7 +408,8 @@ async function renderPersonalCabinetScreen(
   firstName: string,
   username: string,
   supabase: any,
-  session: any
+  session: any,
+  messageId?: number
 ) {
   const { data: profile } = await supabase
     .from('profiles')
@@ -431,14 +470,10 @@ async function renderPersonalCabinetScreen(
     ],
   };
 
-  await sendAndTrackMessage(botToken, chatId, {
-    text: cabMsg,
-    parse_mode: 'Markdown',
-    reply_markup: cabinetInlineKb,
-  }, session);
+  await editOrSendMessage(botToken, chatId, messageId, cabMsg, cabinetInlineKb, session);
 }
 
-async function renderProgramsScreen(botToken: string, chatId: number, session: any) {
+async function renderProgramsScreen(botToken: string, chatId: number, session: any, messageId?: number) {
   let programsMsg = `📚 *ПРОГРАММЫ ЗАНЯТИЙ И ТАРИФЫ*\n\n` +
     `*Юлия Павловна* — Эксперт по развитию и подготовке к школе с опытом более 30 лет.\n\n`;
 
@@ -459,14 +494,10 @@ async function renderProgramsScreen(botToken: string, chatId: number, session: a
     ],
   };
 
-  await sendAndTrackMessage(botToken, chatId, {
-    text: programsMsg,
-    parse_mode: 'Markdown',
-    reply_markup: programsInlineKb,
-  }, session);
+  await editOrSendMessage(botToken, chatId, messageId, programsMsg, programsInlineKb, session);
 }
 
-async function renderRequisitesScreen(botToken: string, chatId: number, supabase: any, session: any) {
+async function renderRequisitesScreen(botToken: string, chatId: number, supabase: any, session: any, messageId?: number) {
   const reqs = await getRequisites(supabase);
 
   let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
@@ -479,26 +510,17 @@ async function renderRequisitesScreen(botToken: string, chatId: number, supabase
   const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
     `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
 
-  await sendAndTrackMessage(botToken, chatId, {
-    text: payMsg,
-    parse_mode: 'Markdown',
-    reply_markup: yuliaContactInlineKb,
-  }, session);
+  await editOrSendMessage(botToken, chatId, messageId, payMsg, yuliaContactInlineKb, session);
 }
 
-async function renderContactScreen(botToken: string, chatId: number, session: any) {
+async function renderContactScreen(botToken: string, chatId: number, session: any, messageId?: number) {
   const contactMsg = `👩‍🏫 *СВЯЗЬ С ПЕДАГОГОМ*\n\n` +
     `*Скокова Юлия Павловна*\n` +
     `Эксперт по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
     `📞 Телефон: +7 (960) 837-47-06\n\n` +
     `Нажмите кнопку ниже, чтобы перейти в личный чат с Юлией Павловной:`;
 
-  await sendAndTrackMessage(botToken, chatId, {
-    text: contactMsg,
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true,
-    reply_markup: yuliaContactInlineKb,
-  }, session);
+  await editOrSendMessage(botToken, chatId, messageId, contactMsg, yuliaContactInlineKb, session, true);
 }
 
 export async function POST(req: Request) {
@@ -907,7 +929,7 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------
-    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК)
+    // 3. ОБРАБОТКА CALLBACK QUERIES (КЛИКИ ИНЛАЙН КНОПОК) - НА МЕСТЕ И РЕДАКТИРОВАНИЕ БЕЗ МИГАНИЯ
     // -------------------------------------------------------------
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
@@ -930,20 +952,17 @@ export async function POST(req: Request) {
 
       let session = await getUserSession(supabase, parentUserId);
 
-      // Клик "⬅️ Назад в главное меню"
+      // Клик "⬅️ Назад в главное меню" -> Редактируем сообщение на месте
       if (callbackData === 'go_main_menu') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
         await clearUserSession(supabase, parentUserId);
         session = {};
-
-        await renderMainMenuScreen(botToken, chatId, callbackQuery.from?.first_name || 'Родитель', session);
+        await renderMainMenuScreen(botToken, chatId, callbackQuery.from?.first_name || 'Родитель', session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "👤 Мой кабинет"
+      // Клик "👤 Мой кабинет" -> Редактируем сообщение на месте
       if (callbackData === 'menu_my') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
         await renderPersonalCabinetScreen(
           botToken,
           chatId,
@@ -951,40 +970,36 @@ export async function POST(req: Request) {
           callbackQuery.from?.first_name || 'Родитель',
           callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '',
           supabase,
-          session
+          session,
+          messageId
         );
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "📚 Программы и тарифы"
+      // Клик "📚 Программы и тарифы" -> Редактируем сообщение на месте
       if (callbackData === 'menu_programs') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
-        await renderProgramsScreen(botToken, chatId, session);
+        await renderProgramsScreen(botToken, chatId, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "💳 Реквизиты оплаты"
+      // Клик "💳 Реквизиты оплаты" -> Редактируем сообщение на месте
       if (callbackData === 'menu_requisites') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
-        await renderRequisitesScreen(botToken, chatId, supabase, session);
+        await renderRequisitesScreen(botToken, chatId, supabase, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик "💬 Связаться с педагогом"
+      // Клик "💬 Связаться с педагогом" -> Редактируем сообщение на месте
       if (callbackData === 'menu_contact') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
-        await renderContactScreen(botToken, chatId, session);
+        await renderContactScreen(botToken, chatId, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик по вызову истории заказов из кабинета
+      // Клик "📋 История заказов" -> Редактируем сообщение на месте
       if (callbackData === 'show_history') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
-
         const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '';
 
         let bookingsQuery = supabase
@@ -1052,25 +1067,19 @@ export async function POST(req: Request) {
           ],
         };
 
-        await sendAndTrackMessage(botToken, chatId, {
-          text: historyMsg,
-          parse_mode: 'Markdown',
-          reply_markup: historyInlineKb,
-        }, session);
-
+        await editOrSendMessage(botToken, chatId, messageId, historyMsg, historyInlineKb, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик по вызову реквизитов из кабинета
+      // Клик "💳 Реквизиты" из инлайна
       if (callbackData === 'show_requisites') {
-        await cleanupPreviousMessages(botToken, chatId, session, messageId);
-        await renderRequisitesScreen(botToken, chatId, supabase, session);
+        await renderRequisitesScreen(botToken, chatId, supabase, session, messageId);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик по выбору тарифа/программы (Инлайн-кнопки)
+      // Клик по выбору тарифа/программы
       if (callbackData.startsWith('service_')) {
         const isOffline = callbackData === 'service_offline';
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
@@ -1091,23 +1100,12 @@ export async function POST(req: Request) {
           slotMsg += `Выберите свободный день и время на интерактивной клавиатуре ниже:`;
         }
 
-        await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            message_id: messageId,
-            text: slotMsg,
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard },
-          }),
-        });
-
+        await editOrSendMessage(botToken, chatId, messageId, slotMsg, { inline_keyboard }, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Клик по инлайн-слоту времени (< 64 байт!)
+      // Клик по инлайн-слоту времени
       if (callbackData.startsWith('slot_')) {
         const slotId = callbackData.replace('slot_', '');
 
@@ -1134,29 +1132,18 @@ export async function POST(req: Request) {
 
         const updatedSlotText = `⏰ *ВЫБРАНО ВРЕМЯ:* \`${timeStr}\`\n\n` +
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
-          `Напишите Ваше имя (например: \`${callbackQuery.from?.first_name || 'Родитель'}\`):`;
+          `Напишите Ваше имя в сообщении (например: \`${callbackQuery.from?.first_name || 'Родитель'}\`):`;
 
         const cancelInlineKb = {
           inline_keyboard: [[{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]],
         };
 
-        await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            message_id: messageId,
-            text: updatedSlotText,
-            parse_mode: 'Markdown',
-            reply_markup: cancelInlineKb,
-          }),
-        });
-
+        await editOrSendMessage(botToken, chatId, messageId, updatedSlotText, cancelInlineKb, session);
         await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
-      // Перелистывание страниц слотов (< 64 байт!)
+      // Перелистывание страниц слотов
       if (callbackData.startsWith('page_')) {
         const pageNum = parseInt(callbackData.replace('page_', ''), 10) || 0;
         const { inline_keyboard } = await buildSlotInlineKeyboard(supabase, pageNum);
