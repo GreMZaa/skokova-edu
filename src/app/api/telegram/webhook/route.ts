@@ -441,7 +441,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Кнопка "📅 Записаться на урок" -> ШАГ 1: Перевод меню на выбор тарифа
+      // Кнопка "📅 Записаться на урок" -> ШАГ 1: Перевод меню на выбор тарифа (Инлайн-кнопки)
       if (text.includes('Записаться') || text === '/book') {
         userSessions[userId] = { step: 'select_service' };
 
@@ -450,15 +450,13 @@ export async function POST(req: Request) {
           `Индивидуальный урок по математике, чтению или грамоте через Zoom / Яндекс Телемост.\n\n` +
           `2️⃣ *Оффлайн-занятие (В кабинете)* — 800 ₽ / 40 мин\n` +
           `Очный урок в оборудованном кабинете педагога в г. Тольятти.\n\n` +
-          `Выберите нужный вариант на клавиатуре внизу:`;
+          `Нажмите на нужную программу ниже:`;
 
-        const serviceReplyKeyboard = {
-          keyboard: [
-            [{ text: '👉 Онлайн-занятие (600 ₽)' }],
-            [{ text: '👉 Оффлайн-занятие (800 ₽)' }],
-            [{ text: '⬅️ Назад в главное меню' }],
+        const serviceInlineKeyboard = {
+          inline_keyboard: [
+            [{ text: '👉 Онлайн-занятие (600 ₽)', callback_data: 'service_online' }],
+            [{ text: '👉 Оффлайн-занятие (800 ₽)', callback_data: 'service_offline' }],
           ],
-          resize_keyboard: true,
         };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -468,14 +466,14 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: servicesMsg,
             parse_mode: 'Markdown',
-            reply_markup: serviceReplyKeyboard,
+            reply_markup: serviceInlineKeyboard,
           }),
         });
 
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия (Инлайн-сетка слотов с пагинацией)
+      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия (если отправлен текст из старой клавиатуры)
       if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
         const isOffline = text.includes('Оффлайн');
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
@@ -489,8 +487,8 @@ export async function POST(req: Request) {
 
         const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
 
-        let slotMsg = `⏰ *ШАГ 2: ВЫБЕРИТЕ ДАТУ И ВРЕМЯ ЗАНЯТИЯ*\n\n` +
-          `Выбрано: *${selectedTitle}* (${selectedPrice} ₽)\n\n`;
+        let slotMsg = `🎯 *ВЫБРАНО:* ${selectedTitle} (${selectedPrice} ₽)\n\n` +
+          `⏰ *ШАГ 2: ВЫБЕРИТЕ ДАТУ И ВРЕМЯ ЗАНЯТИЯ*\n\n`;
 
         if (totalSlots === 0) {
           slotMsg += `⚠️ На ближайшие дни пока нет свободных слотов в расписании. Попробуйте записаться позже!`;
@@ -498,6 +496,7 @@ export async function POST(req: Request) {
           slotMsg += `Выберите свободный день и время на интерактивной клавиатуре ниже:`;
         }
 
+        // Отправляем сетку слотов (Инлайн)
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -506,6 +505,17 @@ export async function POST(req: Request) {
             text: slotMsg,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard },
+          }),
+        });
+
+        // Заменяем нижнюю клавиатуру на кнопку отмены
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: '👇 Выберите удобный слот выше:',
+            reply_markup: cancelKeyboard,
           }),
         });
 
@@ -852,6 +862,56 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callback_query_id: callbackQuery.id }),
       });
+
+      // Клик по выбору тарифа/программы (Инлайн-кнопки)
+      if (callbackData.startsWith('service_')) {
+        const isOffline = callbackData === 'service_offline';
+        const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
+        const selectedPrice = isOffline ? 800 : 600;
+
+        const userId = callbackQuery.from?.id || chatId;
+        userSessions[userId] = {
+          step: 'select_slot_time',
+          service_title: selectedTitle,
+          price: selectedPrice,
+        };
+
+        const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
+
+        let slotMsg = `🎯 *ВЫБРАНО:* ${selectedTitle} (${selectedPrice} ₽)\n\n` +
+          `⏰ *ШАГ 2: ВЫБЕРИТЕ ДАТУ И ВРЕМЯ ЗАНЯТИЯ*\n\n`;
+
+        if (totalSlots === 0) {
+          slotMsg += `⚠️ На ближайшие дни пока нет свободных слотов в расписании. Попробуйте записаться позже!`;
+        } else {
+          slotMsg += `Выберите свободный день и время на интерактивной клавиатуре ниже:`;
+        }
+
+        await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            message_id: messageId,
+            text: slotMsg,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard },
+          }),
+        });
+
+        // Отправляем кнопку отмены внизу экрана
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: '👇 Выберите удобный слот выше:',
+            reply_markup: cancelKeyboard,
+          }),
+        });
+
+        return NextResponse.json({ success: true });
+      }
 
       // Клик по инлайн-слоту времени (< 64 байт!)
       if (callbackData.startsWith('slot_')) {
