@@ -169,25 +169,6 @@ export async function POST(req: Request) {
           `• 📚 Программы, тарифы и реквизиты СБП\n\n` +
           `Выберите нужный пункт в меню ниже:`;
 
-        const startInlineKb = {
-          inline_keyboard: [
-            [
-              { text: '📅 1) Записаться на урок', callback_data: 'start_booking' },
-            ],
-            [
-              { text: '🌐 Открыть интерактивное Mini App', web_app: { url: twaUrl } },
-            ],
-            [
-              { text: '👤 2) Мой кабинет', callback_data: 'native_cabinet' },
-              { text: '📚 3) Программы', callback_data: 'native_programs' },
-            ],
-            [
-              { text: '💳 4) Реквизиты СБП', callback_data: 'payment_info' },
-              { text: '💬 5) Педагог', url: 'https://t.me/ssharonovv' },
-            ],
-          ],
-        };
-
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -195,16 +176,6 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: welcomeText,
             parse_mode: 'Markdown',
-            reply_markup: startInlineKb,
-          }),
-        });
-
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: 'Используйте меню внизу экрана для быстрой навигации:',
             reply_markup: mainReplyKeyboard,
           }),
         });
