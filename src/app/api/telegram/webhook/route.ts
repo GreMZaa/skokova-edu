@@ -630,27 +630,6 @@ export async function POST(req: Request) {
       // Удаляем сообщение пользователя и старый экран
       await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
-      // Удаляем старые нижние клавиатуры если они были у пользователя
-      try {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '...',
-            reply_markup: { remove_keyboard: true },
-          }),
-        }).then(r => r.json()).then(j => {
-          if (j.result?.message_id) {
-            fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: chatId, message_id: j.result.message_id }),
-            });
-          }
-        });
-      } catch (e) {}
-
       // Проверка команд встроенного меню
       const isMenuCommand = 
         text.includes('Назад') || text.includes('Отмена') || text === '/cancel' ||
