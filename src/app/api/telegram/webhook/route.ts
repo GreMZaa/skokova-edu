@@ -1424,45 +1424,113 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Подтверждение или отмена педагогом
-      const [action, bookingId] = callbackData.split('_');
+      // -------------------------------------------------------------
+      // ПОДТВЕРЖДЕНИЕ ИЛИ ОТМЕНА ПЕДАГОГОМ В ТЕЛЕГРАМ-ЧАТЕ
+      // -------------------------------------------------------------
+      if (callbackData.startsWith('confirm_')) {
+        const bookingId = callbackData.replace('confirm_', '');
 
-      if (action === 'confirm') {
         await supabase
           .from('bookings')
           .update({ status: 'confirmed' })
           .eq('id', bookingId);
 
-        const updatedText = `${callbackQuery.message.text}\n\n✅ *СТАТУС: Запись подтверждена педагогом*`;
-        await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            message_id: messageId,
-            text: updatedText,
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [] },
-          }),
-        });
-      } else if (action === 'reject') {
+        const { data: bookingObj } = await supabase
+          .from('bookings')
+          .select('slot_id')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        if (bookingObj?.slot_id) {
+          await supabase
+            .from('time_slots')
+            .update({ is_booked: true, locked_until: null })
+            .eq('id', bookingObj.slot_id);
+        }
+
+        const origCaption = callbackQuery.message.caption || callbackQuery.message.text || '';
+        const updatedCaption = `${origCaption}\n\n✅ *СТАТУС: Чек проверен и зачисление подтверждено педагогом!*`;
+
+        if (callbackQuery.message.caption !== undefined) {
+          await fetch(`https://api.telegram.org/bot${botToken}/editMessageCaption`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: messageId,
+              caption: updatedCaption,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [] },
+            }),
+          });
+        } else {
+          await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: messageId,
+              text: updatedCaption,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [] },
+            }),
+          });
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
+      if (callbackData.startsWith('reject_')) {
+        const bookingId = callbackData.replace('reject_', '');
+
         await supabase
           .from('bookings')
           .update({ status: 'cancelled' })
           .eq('id', bookingId);
 
-        const rejectedText = `${callbackQuery.message.text}\n\n❌ *СТАТУС: Заявка отклонена педагогом*`;
-        await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            message_id: messageId,
-            text: rejectedText,
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [] },
-          }),
-        });
+        const { data: bookingObj } = await supabase
+          .from('bookings')
+          .select('slot_id')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        if (bookingObj?.slot_id) {
+          await supabase
+            .from('time_slots')
+            .update({ is_booked: false, locked_until: null })
+            .eq('id', bookingObj.slot_id);
+        }
+
+        const origCaption = callbackQuery.message.caption || callbackQuery.message.text || '';
+        const rejectedCaption = `${origCaption}\n\n❌ *СТАТУС: Заявка отклонена педагогом*`;
+
+        if (callbackQuery.message.caption !== undefined) {
+          await fetch(`https://api.telegram.org/bot${botToken}/editMessageCaption`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: messageId,
+              caption: rejectedCaption,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [] },
+            }),
+          });
+        } else {
+          await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: messageId,
+              text: rejectedCaption,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [] },
+            }),
+          });
+        }
+
+        return NextResponse.json({ success: true });
       }
 
       return NextResponse.json({ success: true });
