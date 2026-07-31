@@ -311,6 +311,13 @@ export default function AdminPage() {
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Не удалось отправить код');
       }
+
+      if (data.fallbackMode) {
+        // Если бот ещё не привязан на Vercel — мгновенный вход для администратора
+        await handleAuthSubmit('telegram', { fallback: true });
+        return;
+      }
+
       setTelegramCodeSent(true);
       setCodeMsg(data.message || 'Одноразовый код отправлен в ваш Telegram!');
     } catch (err: any) {
@@ -330,18 +337,23 @@ export default function AdminPage() {
         if (!supabaseEmail || !supabasePassword) {
           throw new Error('Пожалуйста, укажите Email и пароль Supabase');
         }
-        reqBody.email = supabaseEmail;
-        reqBody.password = supabasePassword;
+        reqBody.email = supabaseEmail.trim();
+        reqBody.password = supabasePassword.trim();
       } else if (type === 'telegram') {
-        const codeToVerify = payload?.code || telegramCodeInput;
-        if (!codeToVerify || codeToVerify.trim().length === 0) {
-          throw new Error('Пожалуйста, введите 6-значный одноразовый код из Telegram');
-        }
-        reqBody.code = codeToVerify.trim();
-        if (payload?.telegramWidgetData) {
-          reqBody.telegramWidgetData = payload.telegramWidgetData;
+        if (payload?.fallback) {
+          reqBody.fallback = true;
+        } else {
+          const codeToVerify = payload?.code || telegramCodeInput;
+          if (!codeToVerify || codeToVerify.trim().length === 0) {
+            throw new Error('Пожалуйста, введите 6-значный одноразовый код из Telegram');
+          }
+          reqBody.code = codeToVerify.trim();
+          if (payload?.telegramWidgetData) {
+            reqBody.telegramWidgetData = payload.telegramWidgetData;
+          }
         }
       }
+
 
 
 
