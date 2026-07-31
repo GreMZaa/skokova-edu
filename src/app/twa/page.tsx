@@ -27,6 +27,18 @@ export default function TelegramWebAppPage() {
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
+
+      // Отключаем жесты вертикального свайпа для закрытия/скрытия Mini App при скролле
+      if (typeof tg.disableVerticalSwipes === 'function') {
+        tg.disableVerticalSwipes();
+      } else {
+        tg.isVerticalSwipesEnabled = false;
+      }
+
+      // Включаем подтверждение закрытия для предотвращения случайного свайпа
+      if (typeof tg.enableClosingConfirmation === 'function') {
+        tg.enableClosingConfirmation();
+      }
       
       if (tg.initDataUnsafe?.user) {
         setTgUser(tg.initDataUnsafe.user);
