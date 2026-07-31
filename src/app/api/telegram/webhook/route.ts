@@ -196,6 +196,51 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
+// Очистка старых сообщений для поддержания идеального порядка в чате
+async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
+  const idsToDelete = [...(session.last_message_ids || [])];
+  if (extraMsgId) idsToDelete.push(extraMsgId);
+
+  session.last_message_ids = [];
+
+  for (const mid of idsToDelete) {
+    if (!mid) continue;
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: mid }),
+      });
+    } catch (e) {
+      // Игнорируем если уже удалено или старше 48ч
+    }
+  }
+}
+
+// Отправка нового сообщения с сохранением message_id в сессии
+async function sendAndTrackMessage(
+  botToken: string,
+  chatId: number,
+  payload: any,
+  session: any
+) {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      ...payload,
+    }),
+  });
+
+  const json = await res.json();
+  if (json.ok && json.result?.message_id) {
+    if (!session.last_message_ids) session.last_message_ids = [];
+    session.last_message_ids.push(json.result.message_id);
+  }
+  return json;
+}
+
 // Построитель компактной сетки выбора слотов даты и времени (Инлайн-клавиатура < 64 байт!)
 async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
   const nowIso = new Date().toISOString();
@@ -261,7 +306,6 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
     inline_keyboard.push(navRow);
   }
 
-  // Кнопка возврата в главное меню
   inline_keyboard.push([{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }]);
 
   return { inline_keyboard, totalSlots: validSlots.length, currentPage, totalPages };
@@ -338,8 +382,20 @@ export async function POST(req: Request) {
     // -------------------------------------------------------------
     if (update.message && (update.message.photo || update.message.document)) {
       const chatId = update.message.chat.id;
+      const userMsgId = update.message.message_id;
       const username = update.message.from?.username ? `@${update.message.from.username}` : '';
       const firstName = update.message.from?.first_name || 'Родитель';
+
+      const parentUserId = await getOrCreateUserProfile(supabase, {
+        telegramId: update.message.from?.id || chatId,
+        firstName: firstName,
+        username: username,
+      });
+
+      let session = await getUserSession(supabase, parentUserId);
+
+      // Удаляем сообщение пользователя с чеком и предыдущие сообщения бота
+      await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
       const { data: bookings } = await supabase
         .from('bookings')
@@ -401,28 +457,22 @@ export async function POST(req: Request) {
           });
         }
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `✅ *Ваш чек успешно получен и отправлен педагогу на проверку!*\n\n` +
-              `Скокова Юлия Павловна свяжется с Вами и подтвердит время занятия. Статус записи можно отслеживать в разделе *«👤 Мой кабинет»*.`,
-            parse_mode: 'Markdown',
-            reply_markup: yuliaContactInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: `✅ *Ваш чек успешно получен и отправлен педагогу на проверку!*\n\n` +
+            `Скокова Юлия Павловна свяжется с Вами и подтвердит время занятия. Статус записи можно отслеживать в разделе *«👤 Мой кабинет»*.`,
+          parse_mode: 'Markdown',
+          reply_markup: yuliaContactInlineKb,
+        }, session);
+
+        await setUserSession(supabase, parentUserId, session);
       } else {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `📑 Мы получили Ваш чек. Чтобы привязать его к записи, сначала нажмите *«📅 Записаться на урок»* в меню ниже.`,
-            parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: `📑 Мы получили Ваш чек. Чтобы привязать его к записи, сначала нажмите *«📅 Записаться на урок»* в меню ниже.`,
+          parse_mode: 'Markdown',
+          reply_markup: mainReplyKeyboard,
+        }, session);
+
+        await setUserSession(supabase, parentUserId, session);
       }
 
       return NextResponse.json({ success: true });
@@ -433,6 +483,7 @@ export async function POST(req: Request) {
     // -------------------------------------------------------------
     if (update.message && (update.message.text !== undefined || update.message.contact !== undefined)) {
       const chatId = update.message.chat.id;
+      const userMsgId = update.message.message_id;
       const userId = update.message.from?.id || chatId;
       const text = (update.message.text || '').trim();
       const username = update.message.from?.username ? `@${update.message.from.username}` : '';
@@ -445,6 +496,11 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
+
+      // Удаляем предыдущие сообщения бота и текущее сообщение пользователя (кроме /start при первом входе)
+      if (!text.startsWith('/start')) {
+        await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
+      }
 
       // ПРИОРИТЕТ 1: Если нажата кнопка главного меню или Отмена -> Сразу очищаем шаг записи и выполняем меню!
       const isMenuCommand = 
@@ -463,16 +519,12 @@ export async function POST(req: Request) {
 
       // Отмена / Назад в главное меню
       if (text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '👌 Вы вернулись в главное меню. Выберите нужный раздел:',
-            reply_markup: mainReplyKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👌 Вы вернулись в главное меню. Выберите нужный раздел:',
+          reply_markup: mainReplyKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -488,24 +540,19 @@ export async function POST(req: Request) {
           `• 📚 Программы, тарифы и реквизиты СБП\n\n` +
           `Выберите нужный раздел на нижней клавиатуре:`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: welcomeText,
-            parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: welcomeText,
+          parse_mode: 'Markdown',
+          reply_markup: mainReplyKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
       // Кнопка "📅 Записаться на урок" -> ШАГ 1: Перевод меню на выбор тарифа (Инлайн-кнопки)
       if (text.includes('Записаться') || text === '/book') {
         session = { step: 'select_service' };
-        await setUserSession(supabase, parentUserId, session);
 
         let servicesMsg = `🎯 *ШАГ 1: ВЫБЕРИТЕ ПРОГРАММУ ЗАНЯТИЙ*\n\n` +
           `1️⃣ *Онлайн-занятие (Индивидуально)* — 600 ₽ / 40 мин\n` +
@@ -522,17 +569,13 @@ export async function POST(req: Request) {
           ],
         };
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: servicesMsg,
-            parse_mode: 'Markdown',
-            reply_markup: serviceInlineKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: servicesMsg,
+          parse_mode: 'Markdown',
+          reply_markup: serviceInlineKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -558,17 +601,13 @@ export async function POST(req: Request) {
           ],
         };
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: programsMsg,
-            parse_mode: 'Markdown',
-            reply_markup: programsInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: programsMsg,
+          parse_mode: 'Markdown',
+          reply_markup: programsInlineKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -633,17 +672,13 @@ export async function POST(req: Request) {
           ],
         };
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: cabMsg,
-            parse_mode: 'Markdown',
-            reply_markup: cabinetInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: cabMsg,
+          parse_mode: 'Markdown',
+          reply_markup: cabinetInlineKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -661,17 +696,13 @@ export async function POST(req: Request) {
         const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: payMsg,
-            parse_mode: 'Markdown',
-            reply_markup: yuliaContactInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: payMsg,
+          parse_mode: 'Markdown',
+          reply_markup: yuliaContactInlineKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -683,18 +714,14 @@ export async function POST(req: Request) {
           `📞 Телефон: +7 (960) 837-47-06\n\n` +
           `Нажмите кнопку ниже, чтобы перейти в личный чат с Юлией Павловной:`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: contactMsg,
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true,
-            reply_markup: yuliaContactInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: contactMsg,
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true,
+          reply_markup: yuliaContactInlineKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -702,18 +729,15 @@ export async function POST(req: Request) {
       // ПОШАГОВЫЙ ДИАЛОГ ЗАПИСИ НА УРОК (Только если не нажата кнопка меню!)
       // -------------------------------------------------------------
 
-      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия (если отправлен текст из старой клавиатуры)
+      // ШАГ 1 -> ШАГ 2: Выбор даты и времени занятия
       if (session.step === 'select_service' || text.includes('Онлайн-занятие') || text.includes('Оффлайн-занятие')) {
         const isOffline = text.includes('Оффлайн');
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
 
-        session = {
-          step: 'select_slot_time',
-          service_title: selectedTitle,
-          price: selectedPrice,
-        };
-        await setUserSession(supabase, parentUserId, session);
+        session.step = 'select_slot_time';
+        session.service_title = selectedTitle;
+        session.price = selectedPrice;
 
         const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
 
@@ -726,27 +750,18 @@ export async function POST(req: Request) {
           slotMsg += `Выберите свободный день и время на интерактивной клавиатуре ниже:`;
         }
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: slotMsg,
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard },
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: slotMsg,
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard },
+        }, session);
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '👇 Выберите удобный слот выше:',
-            reply_markup: cancelKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Выберите удобный слот выше:',
+          reply_markup: cancelKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -754,23 +769,18 @@ export async function POST(req: Request) {
       if (session.step === 'select_slot_time' && text) {
         session.slot_time = text.replace('⏰', '').trim();
         session.step = 'awaiting_parent_name';
-        await setUserSession(supabase, parentUserId, session);
 
         const parentPromptMsg = `👍 Время: *${session.slot_time}*\n\n` +
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
           `Напишите Ваше имя (например: \`${firstName}\`):`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: parentPromptMsg,
-            parse_mode: 'Markdown',
-            reply_markup: cancelKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: parentPromptMsg,
+          parse_mode: 'Markdown',
+          reply_markup: cancelKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -778,23 +788,18 @@ export async function POST(req: Request) {
       if (session.step === 'awaiting_parent_name' && text) {
         session.parent_name = text;
         session.step = 'awaiting_child_name';
-        await setUserSession(supabase, parentUserId, session);
 
         const childNamePromptMsg = `👍 Родитель: *${text}*\n\n` +
           `👶 *ШАГ 4: Как зовут ребёнка?*\n` +
           `Напишите только имя ребёнка (например: \`Артём\`):`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: childNamePromptMsg,
-            parse_mode: 'Markdown',
-            reply_markup: cancelKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: childNamePromptMsg,
+          parse_mode: 'Markdown',
+          reply_markup: cancelKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -802,23 +807,18 @@ export async function POST(req: Request) {
       if (session.step === 'awaiting_child_name' && text) {
         session.child_name = text;
         session.step = 'awaiting_child_age_grade';
-        await setUserSession(supabase, parentUserId, session);
 
         const agePromptMsg = `👍 Ребёнок: *${text}*\n\n` +
           `🎓 *ШАГ 5: Укажите возраст или класс ребёнка*\n` +
           `Напишите в сообщении (например: \`6 лет, Подготовка к школе\` или \`3 класс\`):`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: agePromptMsg,
-            parse_mode: 'Markdown',
-            reply_markup: cancelKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: agePromptMsg,
+          parse_mode: 'Markdown',
+          reply_markup: cancelKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -826,7 +826,6 @@ export async function POST(req: Request) {
       if (session.step === 'awaiting_child_age_grade' && text) {
         session.child_grade = text;
         session.step = 'awaiting_phone';
-        await setUserSession(supabase, parentUserId, session);
 
         const phonePromptMsg = `👍 Возраст / Класс: *${text}*\n\n` +
           `📱 *ШАГ 6: Укажите Ваш контактный номер телефона*\n` +
@@ -840,17 +839,13 @@ export async function POST(req: Request) {
           resize_keyboard: true,
         };
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: phonePromptMsg,
-            parse_mode: 'Markdown',
-            reply_markup: contactKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: phonePromptMsg,
+          parse_mode: 'Markdown',
+          reply_markup: contactKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -912,8 +907,6 @@ export async function POST(req: Request) {
           console.error('Supabase booking insert error:', dbError);
         }
 
-        await clearUserSession(supabase, parentUserId);
-
         const reqs = await getRequisites(supabase);
 
         let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
@@ -933,27 +926,19 @@ export async function POST(req: Request) {
           `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: successMsg,
-            parse_mode: 'Markdown',
-            reply_markup: yuliaContactInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: successMsg,
+          parse_mode: 'Markdown',
+          reply_markup: yuliaContactInlineKb,
+        }, session);
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '👇 Используйте меню ниже для дальнейших действий:',
-            reply_markup: mainReplyKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: '👇 Используйте меню ниже для дальнейших действий:',
+          reply_markup: mainReplyKeyboard,
+        }, session);
 
+        session.step = undefined;
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
     }
@@ -984,25 +969,26 @@ export async function POST(req: Request) {
 
       // Клик по "⬅️ Назад в главное меню"
       if (callbackData === 'go_main_menu') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
         await clearUserSession(supabase, parentUserId);
+        session = {};
 
         const welcomeText = `👌 Вы вернулись в главное меню. Выберите нужный раздел:`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: welcomeText,
-            reply_markup: mainReplyKeyboard,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: welcomeText,
+          parse_mode: 'Markdown',
+          reply_markup: mainReplyKeyboard,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
       // Клик по вызову истории заказов из кабинета
       if (callbackData === 'show_history') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
+
         const username = callbackQuery.from?.username ? `@${callbackQuery.from.username}` : '';
 
         let bookingsQuery = supabase
@@ -1070,22 +1056,20 @@ export async function POST(req: Request) {
           ],
         };
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: historyMsg,
-            parse_mode: 'Markdown',
-            reply_markup: historyInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: historyMsg,
+          parse_mode: 'Markdown',
+          reply_markup: historyInlineKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
       // Клик по вызову реквизитов из кабинета
       if (callbackData === 'show_requisites') {
+        await cleanupPreviousMessages(botToken, chatId, session, messageId);
+
         const reqs = await getRequisites(supabase);
 
         let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
@@ -1098,17 +1082,13 @@ export async function POST(req: Request) {
         const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: payMsg,
-            parse_mode: 'Markdown',
-            reply_markup: yuliaContactInlineKb,
-          }),
-        });
+        await sendAndTrackMessage(botToken, chatId, {
+          text: payMsg,
+          parse_mode: 'Markdown',
+          reply_markup: yuliaContactInlineKb,
+        }, session);
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -1118,12 +1098,9 @@ export async function POST(req: Request) {
         const selectedTitle = isOffline ? 'Оффлайн-занятие (В кабинете)' : 'Онлайн-занятие (Индивидуально)';
         const selectedPrice = isOffline ? 800 : 600;
 
-        session = {
-          step: 'select_slot_time',
-          service_title: selectedTitle,
-          price: selectedPrice,
-        };
-        await setUserSession(supabase, parentUserId, session);
+        session.step = 'select_slot_time';
+        session.service_title = selectedTitle;
+        session.price = selectedPrice;
 
         const { inline_keyboard, totalSlots } = await buildSlotInlineKeyboard(supabase, 0);
 
@@ -1148,16 +1125,7 @@ export async function POST(req: Request) {
           }),
         });
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '👇 Выберите удобный слот выше:',
-            reply_markup: cancelKeyboard,
-          }),
-        });
-
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
@@ -1185,7 +1153,6 @@ export async function POST(req: Request) {
         session.slot_id = slotId;
         session.slot_time = timeStr;
         session.step = 'awaiting_parent_name';
-        await setUserSession(supabase, parentUserId, session);
 
         const updatedSlotText = `⏰ *ВЫБРАНО ВРЕМЯ:* \`${timeStr}\`\n\n` +
           `👤 *ШАГ 3: Как к Вам обращаться?*\n` +
@@ -1203,6 +1170,7 @@ export async function POST(req: Request) {
           }),
         });
 
+        await setUserSession(supabase, parentUserId, session);
         return NextResponse.json({ success: true });
       }
 
