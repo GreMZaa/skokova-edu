@@ -395,6 +395,12 @@ export async function POST(req: Request) {
           });
         }
 
+        const contactInlineKb = {
+          inline_keyboard: [
+            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+          ],
+        };
+
         // Подтверждаем родителю
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -404,7 +410,7 @@ export async function POST(req: Request) {
             text: `✅ *Ваш чек успешно получен и отправлен педагогу на проверку!*\n\n` +
               `Скокова Юлия Павловна свяжется с Вами и подтвердит время занятия. Статус записи можно отслеживать в разделе *«👤 Мой кабинет»*.`,
             parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
+            reply_markup: contactInlineKb,
           }),
         });
       } else {
@@ -758,6 +764,12 @@ export async function POST(req: Request) {
           `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
 
+        const contactInlineKb = {
+          inline_keyboard: [
+            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+          ],
+        };
+
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -765,6 +777,16 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: successMsg,
             parse_mode: 'Markdown',
+            reply_markup: contactInlineKb,
+          }),
+        });
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: '👇 Используйте меню ниже для дальнейших действий:',
             reply_markup: mainReplyKeyboard,
           }),
         });
@@ -858,6 +880,12 @@ export async function POST(req: Request) {
         const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
 
+        const contactInlineKb = {
+          inline_keyboard: [
+            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+          ],
+        };
+
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -865,7 +893,7 @@ export async function POST(req: Request) {
             chat_id: chatId,
             text: payMsg,
             parse_mode: 'Markdown',
-            reply_markup: mainReplyKeyboard,
+            reply_markup: contactInlineKb,
           }),
         });
 
@@ -877,9 +905,14 @@ export async function POST(req: Request) {
         const contactMsg = `👩‍🏫 *СВЯЗЬ С ПЕДАГОГОМ*\n\n` +
           `*Скокова Юлия Павловна*\n` +
           `Эксперт по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
-          `📲 Личный Telegram: [@ssharonovv](https://t.me/ssharonovv)\n` +
-          `📞 Телефон: +7 (937) 214-42-05\n\n` +
-          `Задайте любой вопрос или напишите педагогу прямо сейчас!`;
+          `📞 Телефон: +7 (960) 837-47-06\n\n` +
+          `Нажмите кнопку ниже, чтобы перейти в личный чат с Юлией Павловной:`;
+
+        const contactInlineKb = {
+          inline_keyboard: [
+            [{ text: '💬 Написать в Telegram', url: 'https://t.me/id510510041' }],
+          ],
+        };
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -889,7 +922,7 @@ export async function POST(req: Request) {
             text: contactMsg,
             parse_mode: 'Markdown',
             disable_web_page_preview: true,
-            reply_markup: mainReplyKeyboard,
+            reply_markup: contactInlineKb,
           }),
         });
 
