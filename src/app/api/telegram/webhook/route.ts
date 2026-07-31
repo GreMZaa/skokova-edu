@@ -438,7 +438,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 6: Сохранение бронирования в Supabase DB
+      // ШАГ 6: Сохранение бронирования в Supabase DB + создание профиля родителя и ребёнка
       if (session.step === 'awaiting_phone' || update.message.contact !== undefined) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
@@ -448,10 +448,59 @@ export async function POST(req: Request) {
         const rawGrade = session.child_grade || '';
         const mappedGrade = mapChildGradeToEnum(rawGrade);
 
-        // Создаем запись в базе данных Supabase
+        // 1. Автоматический поиск/создание профиля родителя в таблице `profiles`
+        let parentUserId = '';
+        let profileQuery = supabase.from('profiles').select('id');
+
+        if (username) {
+          profileQuery = profileQuery.ilike('telegram_handle', username);
+        } else if (phone) {
+          profileQuery = profileQuery.eq('phone', phone);
+        }
+
+        const { data: existingProfile } = await profileQuery.maybeSingle();
+
+        if (existingProfile) {
+          parentUserId = existingProfile.id;
+          await supabase.from('profiles').update({
+            full_name: parentNameOnly,
+            phone: phone,
+            telegram_handle: username || undefined,
+            updated_at: new Date().toISOString(),
+          }).eq('id', parentUserId);
+        } else {
+          parentUserId = crypto.randomUUID();
+          await supabase.from('profiles').insert({
+            id: parentUserId,
+            full_name: parentNameOnly,
+            phone: phone,
+            telegram_handle: username || null,
+          });
+        }
+
+        // 2. Автоматическое создание/привязка ребёнка в таблице `children`
+        if (childNameOnly) {
+          const { data: existingChild } = await supabase
+            .from('children')
+            .select('id')
+            .eq('parent_id', parentUserId)
+            .ilike('name', childNameOnly)
+            .maybeSingle();
+
+          if (!existingChild) {
+            await supabase.from('children').insert({
+              parent_id: parentUserId,
+              name: childNameOnly,
+              grade: mappedGrade,
+            });
+          }
+        }
+
+        // 3. Создаем запись бронирования с привязанным user_id родителя
         const { data: newBooking, error: dbError } = await supabase
           .from('bookings')
           .insert({
+            user_id: parentUserId,
             service_title: session.service_title || SERVICES[0].title,
             price: session.price || SERVICES[0].price,
             parent_name: parentNameOnly,
