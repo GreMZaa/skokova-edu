@@ -158,7 +158,7 @@ async function getOrCreateUserProfile(
   return parentUserId;
 }
 
-// Построитель компактной сетки выбора слотов даты и времени (Инлайн-клавиатура)
+// Построитель компактной сетки выбора слотов даты и времени (Инлайн-клавиатура < 64 байт!)
 async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
   const nowIso = new Date().toISOString();
 
@@ -178,7 +178,7 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
 
   const inline_keyboard: any[][] = [];
 
-  // Группируем слоты по 2 в ряд в красивую компактную инлайн-сетку
+  // Группируем слоты по 2 в ряд в инлайн-сетку с короткой callback_data < 64 байт
   for (let i = 0; i < pageSlots.length; i += 2) {
     const row: any[] = [];
 
@@ -192,7 +192,7 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
     });
     row.push({
       text: `🗓 ${dateStr1}`,
-      callback_data: `selectslot_${slot1.id}_${encodeURIComponent(dateStr1)}`,
+      callback_data: `slot_${slot1.id}`,
     });
 
     if (i + 1 < pageSlots.length) {
@@ -206,20 +206,20 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
       });
       row.push({
         text: `🗓 ${dateStr2}`,
-        callback_data: `selectslot_${slot2.id}_${encodeURIComponent(dateStr2)}`,
+        callback_data: `slot_${slot2.id}`,
       });
     }
 
     inline_keyboard.push(row);
   }
 
-  // Кнопки пагинации слотов (перелистывание страниц)
+  // Кнопки пагинации слотов
   const navRow: any[] = [];
   if (currentPage > 0) {
-    navRow.push({ text: '◀️ Раньше', callback_data: `slotpage_${currentPage - 1}` });
+    navRow.push({ text: '◀️ Раньше', callback_data: `page_${currentPage - 1}` });
   }
   if (currentPage < totalPages - 1) {
-    navRow.push({ text: 'Позже ▶️', callback_data: `slotpage_${currentPage + 1}` });
+    navRow.push({ text: 'Позже ▶️', callback_data: `page_${currentPage + 1}` });
   }
   if (navRow.length > 0) {
     inline_keyboard.push(navRow);
@@ -512,7 +512,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 2 -> ШАГ 3: Если время введено сообщением или через инлайн
+      // ШАГ 2 -> ШАГ 3: Если время введено сообщением вручную
       if (session.step === 'select_slot_time' && text && !text.includes('Записаться') && !text.includes('Онлайн') && !text.includes('Оффлайн')) {
         session.slot_time = text.replace('⏰', '').trim();
         session.step = 'awaiting_parent_name';
@@ -853,11 +853,27 @@ export async function POST(req: Request) {
         body: JSON.stringify({ callback_query_id: callbackQuery.id }),
       });
 
-      // Клик по инлайн-слоту времени
-      if (callbackData.startsWith('selectslot_')) {
-        const parts = callbackData.split('_');
-        const slotId = parts[1];
-        const timeStr = parts[2] ? decodeURIComponent(parts[2]) : 'Выбранное время';
+      // Клик по инлайн-слоту времени (< 64 байт!)
+      if (callbackData.startsWith('slot_')) {
+        const slotId = callbackData.replace('slot_', '');
+
+        // Получаем информацию о слоте из базы данных Supabase
+        const { data: slot } = await supabase
+          .from('time_slots')
+          .select('*')
+          .eq('id', slotId)
+          .single();
+
+        let timeStr = 'Выбранное время';
+        if (slot) {
+          timeStr = new Date(slot.start_time).toLocaleString('ru-RU', {
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Europe/Samara',
+          });
+        }
 
         const userId = callbackQuery.from?.id || chatId;
         const session = userSessions[userId] || {};
@@ -885,9 +901,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // Перелистывание страниц слотов
-      if (callbackData.startsWith('slotpage_')) {
-        const pageNum = parseInt(callbackData.split('_')[1] || '0', 10);
+      // Перелистывание страниц слотов (< 64 байт!)
+      if (callbackData.startsWith('page_')) {
+        const pageNum = parseInt(callbackData.replace('page_', ''), 10) || 0;
         const { inline_keyboard } = await buildSlotInlineKeyboard(supabase, pageNum);
 
         await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
