@@ -31,6 +31,14 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Скокова Юлия Павловна | Эксперт по развитию и подготовке к школе',
   description: 'Подготовка к 1 классу и репетиторство для учеников 1–4 классов. Интерактивные онлайн-уроки с использованием нейропедагогического подхода для уверенного старта в школе.',
+  icons: {
+    icon: [
+      { url: '/avatar.png', type: 'image/png' },
+      { url: '/favicon.ico', type: 'image/x-icon' },
+    ],
+    shortcut: '/avatar.png',
+    apple: '/avatar.png',
+  },
   openGraph: {
     title: 'Скокова Юлия Павловна | Эксперт по развитию и подготовке к школе',
     description: 'Индивидуальные онлайн-уроки и подготовка к школе без слёз и стресса.',
