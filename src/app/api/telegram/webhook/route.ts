@@ -44,32 +44,91 @@ async function getOrCreateUserProfile(
 ) {
   const { telegramId, firstName, username, phone, fullName } = params;
   const parentName = fullName || firstName || 'Родитель';
+  const cleanPhoneDigits = phone ? phone.replace(/\D/g, '') : '';
+  const last10Phone = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
   const email = `tg_${telegramId}@skokova-edu.ru`;
   const password = `Tg_${telegramId}!`;
 
-  // 1. Поиск существующего профиля в `profiles`
-  let query = supabase.from('profiles').select('id');
+  // 1. Поиск по telegram_handle в существующих профилях (без учета регистра)
   if (username) {
-    query = query.ilike('telegram_handle', username);
-  } else if (phone) {
-    query = query.eq('phone', phone);
+    const handleWithoutAt = username.replace('@', '').toLowerCase();
+    const { data: allProfiles } = await supabase.from('profiles').select('*');
+    const existingByHandle = allProfiles?.find((p: any) =>
+      p.telegram_handle && p.telegram_handle.replace('@', '').toLowerCase() === handleWithoutAt
+    );
+
+    if (existingByHandle) {
+      await supabase.from('profiles').update({
+        full_name: parentName !== 'Родитель' ? parentName : existingByHandle.full_name,
+        phone: phone || existingByHandle.phone,
+        telegram_handle: username,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existingByHandle.id);
+
+      return existingByHandle.id;
+    }
   }
 
-  const { data: existingProfile } = await query.maybeSingle();
+  // 2. Поиск по номеру телефона (сравнение последних 10 цифр с профилями сайта)
+  if (last10Phone) {
+    const { data: allProfiles } = await supabase.from('profiles').select('*');
+    const existingByPhone = allProfiles?.find((p: any) =>
+      p.phone && p.phone.replace(/\D/g, '').endsWith(last10Phone)
+    );
 
-  if (existingProfile) {
-    await supabase.from('profiles').update({
+    if (existingByPhone) {
+      await supabase.from('profiles').update({
+        full_name: parentName !== 'Родитель' ? parentName : existingByPhone.full_name,
+        phone: phone || existingByPhone.phone,
+        telegram_handle: username || existingByPhone.telegram_handle,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existingByPhone.id);
+
+      return existingByPhone.id;
+    }
+
+    // Поиск по предыдущим бронированиям с сайта (если пользователь бронировал на сайте ранее)
+    const { data: pastBookings } = await supabase
+      .from('bookings')
+      .select('user_id, parent_name, phone')
+      .not('user_id', 'is', null);
+
+    const matchedBooking = pastBookings?.find((b: any) =>
+      b.phone && b.phone.replace(/\D/g, '').endsWith(last10Phone)
+    );
+
+    if (matchedBooking && matchedBooking.user_id) {
+      await supabase.from('profiles').upsert({
+        id: matchedBooking.user_id,
+        full_name: parentName !== 'Родитель' ? parentName : matchedBooking.parent_name,
+        phone: phone || matchedBooking.phone,
+        telegram_handle: username || null,
+        updated_at: new Date().toISOString(),
+      });
+
+      return matchedBooking.user_id;
+    }
+  }
+
+  // 3. Поиск по email/telegramId в Supabase Auth (если бот уже связывал аккаунт)
+  const { data: authList } = await supabase.auth.admin.listUsers();
+  const existingAuthUser = authList?.users?.find(
+    (u: any) => u.email === email || u.user_metadata?.telegram_id === telegramId
+  );
+
+  if (existingAuthUser) {
+    await supabase.from('profiles').upsert({
+      id: existingAuthUser.id,
       full_name: parentName,
-      phone: phone || undefined,
-      telegram_handle: username || undefined,
+      phone: phone || '',
+      telegram_handle: username || null,
       updated_at: new Date().toISOString(),
-    }).eq('id', existingProfile.id);
+    });
 
-    return existingProfile.id;
+    return existingAuthUser.id;
   }
 
-  // 2. Если профиля нет — создаем пользователя в Supabase Auth
-  let parentUserId = '';
+  // 4. СОЗДАНИЕ НОВОГО ПРОФИЛЯ: Только если пользователь действительно регистрируется впервые
   const { data: authUserData, error: authErr } = await supabase.auth.admin.createUser({
     email: email,
     password: password,
@@ -81,17 +140,10 @@ async function getOrCreateUserProfile(
     },
   });
 
-  if (authUserData?.user) {
-    parentUserId = authUserData.user.id;
-  } else {
-    // Если пользователь с таким email уже был создан ранее в Auth
-    const { data: authList } = await supabase.auth.admin.listUsers();
-    const foundUser = authList?.users?.find(
-      (u: any) => u.email === email || u.user_metadata?.telegram_id === telegramId
-    );
-    if (foundUser) {
-      parentUserId = foundUser.id;
-    }
+  let parentUserId = authUserData?.user?.id || '';
+
+  if (!parentUserId && authErr) {
+    console.error('Supabase Auth user creation error:', authErr);
   }
 
   if (parentUserId) {
