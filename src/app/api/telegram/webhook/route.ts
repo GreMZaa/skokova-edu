@@ -940,12 +940,29 @@ export async function POST(req: Request) {
       });
 
       let session = await getUserSession(supabase, parentUserId);
+
+      // -------------------------------------------------------------
+      // ГЛАВНОЕ МЕНЮ (/start)
+      // -------------------------------------------------------------
+      if (text.startsWith('/start')) {
+        await clearUserSession(supabase, parentUserId);
+        session = {
+          start_message_ids: userMsgId ? [userMsgId] : [],
+        };
+
+        await cleanupPreviousMessages(botToken, chatId, session);
+        syncBotDescription(botToken);
+        await renderMainMenuScreen(botToken, chatId, firstName, session);
+        await setUserSession(supabase, parentUserId, session);
+        return NextResponse.json({ success: true });
+      }
+
       await cleanupPreviousMessages(botToken, chatId, session, userMsgId);
 
       // Проверка команд встроенного меню
       const isMenuCommand = 
         text.includes('Назад') || text.includes('Отмена') || text === '/cancel' ||
-        text.startsWith('/start') || text === '/menu' ||
+        text === '/menu' ||
         text.includes('Записаться') || text === '/book' ||
         text.includes('Мой кабинет') || text === '/my' ||
         text.includes('Программы') || text === '/programs' ||
@@ -954,17 +971,13 @@ export async function POST(req: Request) {
 
       if (isMenuCommand) {
         await clearUserSession(supabase, parentUserId);
-        session = {};
+        session = {
+          start_message_ids: session.start_message_ids || [],
+        };
       }
 
-      // Главное меню (/start, /menu, Назад, Отмена)
-      if (text.startsWith('/start') || text === '/menu' || text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
-        if (text.startsWith('/start') && userMsgId) {
-          if (!session.start_message_ids) session.start_message_ids = [];
-          if (!session.start_message_ids.includes(userMsgId)) {
-            session.start_message_ids.push(userMsgId);
-          }
-        }
+      // Главное меню (/menu, Назад, Отмена)
+      if (text === '/menu' || text.includes('Назад') || text.includes('Отмена') || text === '/cancel') {
         syncBotDescription(botToken);
         await renderMainMenuScreen(botToken, chatId, firstName, session);
         await setUserSession(supabase, parentUserId, session);
