@@ -452,14 +452,7 @@ async function renderMainMenuScreen(botToken: string, chatId: number, firstName:
     `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
     `✨ *Выберите нужный раздел на интерактивных кнопках ниже:*`;
 
-  const res = await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
-  const startId = res?.result?.message_id || messageId;
-  if (startId) {
-    if (!session.start_message_ids) session.start_message_ids = [];
-    if (!session.start_message_ids.includes(startId)) {
-      session.start_message_ids.push(startId);
-    }
-  }
+  await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
 }
 
 async function renderPersonalCabinetScreen(
