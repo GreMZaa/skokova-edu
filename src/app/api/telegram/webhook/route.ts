@@ -531,14 +531,12 @@ const yuliaContactInlineKb = {
 
 async function renderServicesScreen(botToken: string, chatId: number, session: any, messageId?: number) {
   const servicesText = `📚 *ШАГ 1: ВЫБЕРИТЕ ПРОГРАММУ ЗАНЯТИЯ*\n\n` +
-    `Выберите интересующую Вас программу или формат обучения ниже:`;
+    `Выберите программу занятия ниже:`;
 
   const servicesInlineKb = {
     inline_keyboard: [
       [{ text: '💻 Онлайн-занятие (Индивидуально) — 600 ₽', callback_data: 'service_online' }],
       [{ text: '🏫 Оффлайн-занятие (В кабинете) — 800 ₽', callback_data: 'service_offline' }],
-      [{ text: '📚 Подготовка к школе (Групповое) — 500 ₽', callback_data: 'service_group' }],
-      [{ text: '💬 Первичная консультация — Бесплатно', callback_data: 'service_consult' }],
       [{ text: '⬅️ Назад в главное меню', callback_data: 'go_main_menu' }],
     ],
   };
