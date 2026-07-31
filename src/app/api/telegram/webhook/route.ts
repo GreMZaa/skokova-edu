@@ -6,6 +6,32 @@ export const dynamic = 'force-dynamic';
 
 const sanitizeEnv = (val?: string) => (val || '').replace(/["'\r\n]/g, '').trim();
 
+function mapChildGradeToEnum(rawText: string): 'preschool_5' | 'preschool_6' | 'grade_1' | 'grade_2' | 'grade_3' | 'grade_4' {
+  const lower = (rawText || '').toLowerCase();
+  if (lower.includes('1')) return 'grade_1';
+  if (lower.includes('2')) return 'grade_2';
+  if (lower.includes('3')) return 'grade_3';
+  if (lower.includes('4')) return 'grade_4';
+  if (lower.includes('5')) return 'preschool_5';
+  if (lower.includes('6')) return 'preschool_6';
+  return 'preschool_6';
+}
+
+async function getRequisites(supabase: any) {
+  const { data: dbSettings } = await supabase
+    .from('settings')
+    .select('*')
+    .eq('id', 'requisites')
+    .maybeSingle();
+
+  const phone = dbSettings?.phone || '+7 (960) 837-47-06';
+  const cardNumber = dbSettings?.card_number || '';
+  const bankName = dbSettings?.bank_name || 'Т-Банк / Сбербанк';
+  const recipient = dbSettings?.recipient || 'Скокова Юлия Павловна';
+
+  return { phone, cardNumber, bankName, recipient };
+}
+
 // Временное хранилище шагов диалога (Session state for Telegram users)
 const userSessions: Record<number, {
   step?: string;
@@ -329,8 +355,11 @@ export async function POST(req: Request) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
 
+        const rawGrade = session.child_grade || '';
+        const mappedGrade = mapChildGradeToEnum(rawGrade);
+
         // Создаем запись в базе данных Supabase
-        await supabase
+        const { data: newBooking, error: dbError } = await supabase
           .from('bookings')
           .insert({
             service_title: session.service_title || SERVICES[0].title,
@@ -339,29 +368,36 @@ export async function POST(req: Request) {
             phone: phone,
             telegram_handle: username,
             child_name: session.child_name || 'Ученик',
-            child_grade: session.child_grade || 'Подготовка к школе',
+            child_grade: mappedGrade,
+            comment: `Имя и класс от родителя: ${session.child_name || ''} (${rawGrade})`,
             status: 'pending_payment',
             admin_notes: `Запись создана через Telegram-бот (${new Date().toLocaleString('ru-RU')})`,
-          });
+          })
+          .select()
+          .single();
+
+        if (dbError) {
+          console.error('Supabase booking insert error:', dbError);
+        }
 
         delete userSessions[userId];
 
-        // Получаем реквизиты из настроек
-        const { data: settings } = await supabase.from('settings').select('*').limit(1);
-        const set = settings && settings[0] ? settings[0] : null;
-        const sbpPhone = set?.phone || '+7 (937) 214-42-05';
-        const cardNum = set?.card_number || '2202 2024 1122 3344';
-        const recipient = set?.recipient || 'Скокова Юлия Павловна';
+        // Получаем реквизиты из базы данных Supabase (settings eq requisites)
+        const reqs = await getRequisites(supabase);
+
+        let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
+        if (reqs.cardNumber) {
+          payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
+        }
+        payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
+          `👤 *Получатель:* ${reqs.recipient}`;
 
         const successMsg = `🎉 *УРОК УСПЕШНО ЗАБРОНИРОВАН!*\n\n` +
           `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
           `👶 *Ученик:* ${session.child_name || 'Ученик'} (${session.child_grade || 'Подготовка к школе'})\n` +
           `📞 *Телефон:* ${phone}\n` +
           `💰 *К оплате:* *${session.price || SERVICES[0].price} ₽*\n\n` +
-          `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n` +
-          `📱 *Телефон:* \`${sbpPhone}\`\n` +
-          `💳 *Карта:* \`${cardNum}\`\n` +
-          `👤 *Получатель:* ${recipient}\n\n` +
+          `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ (СБП):*\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат!* Бот автоматически передаст его педагогу на проверку.`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -452,19 +488,16 @@ export async function POST(req: Request) {
 
       // Кнопка "💳 Реквизиты оплаты"
       if (text.includes('Реквизиты') || text === '/payment') {
-        const { data: settings } = await supabase.from('settings').select('*').limit(1);
-        const set = settings && settings[0] ? settings[0] : null;
+        const reqs = await getRequisites(supabase);
 
-        const phone = set?.phone || '+7 (937) 214-42-05';
-        const cardNumber = set?.card_number || '2202 2024 1122 3344';
-        const bankName = set?.bank_name || 'Сбербанк / Т-Банк (СБП)';
-        const recipient = set?.recipient || 'Скокова Юлия Павловна';
+        let payDetailsStr = `📱 *Телефон (СБП):* \`${reqs.phone}\`\n`;
+        if (reqs.cardNumber) {
+          payDetailsStr += `💳 *Карта:* \`${reqs.cardNumber}\`\n`;
+        }
+        payDetailsStr += `🏦 *Банк:* ${reqs.bankName}\n` +
+          `👤 *Получатель:* ${reqs.recipient}`;
 
-        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n` +
-          `📱 *Телефон СБП:* \`${phone}\`\n` +
-          `💳 *Карта:* \`${cardNumber}\`\n` +
-          `🏦 *Банк:* ${bankName}\n` +
-          `👤 *Получатель:* ${recipient}\n\n` +
+        const payMsg = `💳 *РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ ЗАНЯТИЙ (СБП)*\n\n${payDetailsStr}\n\n` +
           `📸 *Отправьте фото/скриншот чека прямо в этот чат после оплаты!*`;
 
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
