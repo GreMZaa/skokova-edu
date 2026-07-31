@@ -195,7 +195,7 @@ async function clearUserSession(supabase: any, parentUserId: string) {
   }
 }
 
-// Очистка только старых отработанных сообщений при вводе нового текста
+// Очистка старых сообщений диалога
 async function cleanupPreviousMessages(botToken: string, chatId: number, session: any, extraMsgId?: number) {
   const idsToDelete = [...(session.last_message_ids || [])];
   if (extraMsgId) idsToDelete.push(extraMsgId);
@@ -235,12 +235,14 @@ async function sendAndTrackMessage(
   const json = await res.json();
   if (json.ok && json.result?.message_id) {
     if (!session.last_message_ids) session.last_message_ids = [];
-    session.last_message_ids.push(json.result.message_id);
+    if (!session.last_message_ids.includes(json.result.message_id)) {
+      session.last_message_ids.push(json.result.message_id);
+    }
   }
   return json;
 }
 
-// Редактирование существующего сообщения на месте (0ms миганий, без удаления)
+// Редактирование существующего сообщения на месте (и отслеживание его ID в сессии)
 async function editOrSendMessage(
   botToken: string,
   chatId: number,
@@ -267,6 +269,10 @@ async function editOrSendMessage(
 
       const editJson = await editRes.json();
       if (editJson.ok) {
+        if (!session.last_message_ids) session.last_message_ids = [];
+        if (!session.last_message_ids.includes(messageId)) {
+          session.last_message_ids.push(messageId);
+        }
         return editJson;
       }
     } catch (e) {
@@ -581,7 +587,7 @@ export async function POST(req: Request) {
           })
           .eq('id', pendingBooking.id);
 
-        const caption = `📑 *НОВЫЙ ЧЕК ОБ ОПЛАТЕ ЗАНЯТИЯ!*\n\n` +
+        const caption = `📑 *ЧЕК ОБ ОПЛАТЕ ЗАНЯТИЯ ПОЛУЧЕН!*\n\n` +
           `👤 *Родитель:* ${pendingBooking.parent_name || firstName} (${username || 'без ника'})\n` +
           `📞 *Телефон:* \`${pendingBooking.phone || 'не указан'}\`\n` +
           `👶 *Ученик:* ${pendingBooking.child_name}\n` +
@@ -834,7 +840,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
-      // ШАГ 6: Телефон получен -> Создание записи
+      // ШАГ 6: Телефон получен -> Создание записи в БД + МГНОВЕННОЕ УВЕДОМЛЕНИЕ ПЕДАГОГУ КАК НА САЙТЕ
       if (session.step === 'awaiting_phone' || update.message.contact !== undefined) {
         const phone = update.message.contact?.phone_number || text;
         session.phone = phone;
@@ -891,6 +897,27 @@ export async function POST(req: Request) {
         if (dbError) {
           console.error('Supabase booking insert error:', dbError);
         }
+
+        // МГНОВЕННОЕ УВЕДОМЛЕНИЕ ПЕДАГОГУ В ТЕЛЕГРАМ ЧАТ (КАК НА САЙТЕ!)
+        const teacherNotification = `📌 *НОВАЯ ЗАЯВКА НА УРОК ИЗ TELEGRAM-БОТА!*\n\n` +
+          `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
+          `⏱ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
+          `👤 *Родитель:* ${parentNameOnly} (${username || 'без ника'})\n` +
+          `📞 *Телефон:* \`${phone}\`\n` +
+          `👶 *Ученик:* ${childNameOnly} (${rawGrade})\n` +
+          `💰 *Стоимость:* ${session.price || SERVICES[0].price} ₽\n` +
+          `📌 *Статус:* ⏳ Ожидает оплаты чека\n` +
+          `🆔 *ID записи:* \`${newBooking?.id || ''}\``;
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: teacherChatId,
+            text: teacherNotification,
+            parse_mode: 'Markdown',
+          }),
+        });
 
         const reqs = await getRequisites(supabase);
 
