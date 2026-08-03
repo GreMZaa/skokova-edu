@@ -150,40 +150,44 @@ export default function AdminPage() {
 
 
   useEffect(() => {
-    const authStatus = sessionStorage.getItem('skokova_admin_auth');
-    const storedAdminInfo = sessionStorage.getItem('skokova_admin_info');
-    if (storedAdminInfo) {
-      try {
-        setAdminInfo(JSON.parse(storedAdminInfo));
-      } catch (e) {}
-    }
+    const checkAdminAuth = async () => {
+      const storedAdminInfo = sessionStorage.getItem('skokova_admin_info');
+      if (storedAdminInfo) {
+        try {
+          setAdminInfo(JSON.parse(storedAdminInfo));
+        } catch (e) {}
+      }
 
-    if (authStatus === 'true') {
-      setIsAuthenticated(true);
-      fetchRealBookings();
-      fetchAuditLogs();
-      fetchRequisites();
-    } else {
-      // 1. Проверка активной сессии Supabase Auth
-      const supabase = createClient();
-      supabase.auth.getUser().then(({ data }) => {
-        if (data?.user) {
-          const info = { email: data.user.email, name: data.user.user_metadata?.full_name || data.user.email };
+      try {
+        const token = sessionStorage.getItem('skokova_admin_token');
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+        const res = await fetch('/api/admin/bookings', { headers });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
           setIsAuthenticated(true);
-          setAdminInfo(info);
           sessionStorage.setItem('skokova_admin_auth', 'true');
-          sessionStorage.setItem('skokova_admin_info', JSON.stringify(info));
-          fetchRealBookings();
+          setBookings(data.bookings || []);
           fetchAuditLogs();
           fetchRequisites();
+          return;
         }
-      });
-
-      // 2. Проверка контекста Telegram WebApp
-      if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
-        const tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user;
-        setTelegramUser(tgUser);
+      } catch (e) {
+        console.error('Admin session verification error:', e);
       }
+
+      // Если с сервера пришел 401 или произошла ошибка, сбрасываем статус авторизации без цикличной перезагрузки
+      setIsAuthenticated(false);
+      sessionStorage.removeItem('skokova_admin_auth');
+    };
+
+    checkAdminAuth();
+
+    // Проверка контекста Telegram WebApp
+    if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
+      const tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user;
+      setTelegramUser(tgUser);
     }
   }, []);
 

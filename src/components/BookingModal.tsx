@@ -62,6 +62,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   const [userId, setUserId] = useState('');
 
+  // Состояние баланса абонементов
+  const [userRemainingLessons, setUserRemainingLessons] = useState<number>(0);
+  const [usePackageLesson, setUsePackageLesson] = useState<boolean>(false);
+
   // Prevent body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -100,6 +104,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       if (user) {
         setUserId(user.id);
         if (user.email) setParentEmail(user.email);
+      }
+
+      const pkgRes = await fetch('/api/packages');
+      const pkgData = await pkgRes.json();
+      if (pkgData.total_remaining && pkgData.total_remaining > 0) {
+        setUserRemainingLessons(pkgData.total_remaining);
+        setUsePackageLesson(true);
       }
     } catch (e) {
       // Игнорируем в неавторизованном режиме
@@ -224,7 +235,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         }
       }
 
-      // 2. Создание заказа со статусом 'pending_payment'
+      // 2. Создание заказа (со статусом 'confirmed' если списываем из абонемента, иначе 'pending_payment')
+      const isUsingPackage = usePackageLesson && userRemainingLessons > 0;
+      const targetStatus = isUsingPackage ? 'confirmed' : 'pending_payment';
+
       const formData = new FormData();
       formData.append('slot_id', selectedSlot?.id || '');
       formData.append('service_title', selectedService.title);
@@ -238,7 +252,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       formData.append('child_name', childName);
       formData.append('child_grade', childGrade);
       formData.append('comment', comment);
-      formData.append('status', 'pending_payment');
+      formData.append('status', targetStatus);
       if (currentUserId) {
         formData.append('user_id', currentUserId);
       }
@@ -251,6 +265,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Не удалось создать предварительную заявку');
+      }
+
+      // Списываем 1 урок из абонемента
+      if (isUsingPackage) {
+        await fetch('/api/packages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'use_lesson' }),
+        });
       }
 
       setCurrentBookingId(data.booking_id);
@@ -613,6 +636,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   className="w-full px-3 sm:px-3.5 py-2.5 text-sm rounded-lg sm:rounded-xl border-2 border-[#1F1E1D]/20 focus:border-[#C85A32] outline-none bg-white"
                 />
               </div>
+
+              {userRemainingLessons > 0 && (
+                <div className="p-3 bg-emerald-50 border-2 border-emerald-500 rounded-xl flex items-center justify-between gap-3 hard-shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <div>
+                      <span className="text-xs font-mono font-bold text-emerald-950 block">Активный абонемент!</span>
+                      <span className="text-[11px] text-emerald-800">Остаток: {userRemainingLessons} уроков</span>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer font-mono text-xs font-bold text-emerald-900 bg-white px-3 py-1.5 rounded-lg border border-emerald-400">
+                    <input
+                      type="checkbox"
+                      checked={usePackageLesson}
+                      onChange={(e) => setUsePackageLesson(e.target.checked)}
+                      className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                    />
+                    <span>Списать 1 урок</span>
+                  </label>
+                </div>
+              )}
 
               <div className="flex items-start gap-2.5 pt-1 sm:pt-2">
                 <input

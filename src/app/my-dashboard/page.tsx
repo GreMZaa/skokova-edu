@@ -74,15 +74,32 @@ export interface PaymentMethodItem {
   is_active: boolean;
 }
 
+interface PackageItem {
+  id: string;
+  total_lessons: number;
+  remaining_lessons: number;
+  price_paid: number;
+  status: string;
+  created_at: string;
+}
+
 export default function ParentDashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'bookings' | 'profile'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'packages' | 'profile'>('bookings');
 
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('');
   const [profile, setProfile] = useState<ParentProfile>({ full_name: '', phone: '', telegram_handle: '' });
   const [children, setChildren] = useState<ChildItem[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
+
+  // Состояние абонементов
+  const [userPackages, setUserPackages] = useState<PackageItem[]>([]);
+  const [totalRemainingLessons, setTotalRemainingLessons] = useState<number>(0);
+  const [showPackageModal, setShowPackageModal] = useState<boolean>(false);
+  const [selectedPackageCount, setSelectedPackageCount] = useState<number>(4);
+  const [buyingPackage, setBuyingPackage] = useState<boolean>(false);
+  const [packageMsg, setPackageMsg] = useState<string>('');
 
   // Карточки реквизитов оплаты из базы данных
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodItem[]>([
@@ -169,6 +186,13 @@ export default function ParentDashboardPage() {
       const bookData = await bookRes.json();
       if (bookData.success) {
         setBookings(bookData.bookings || []);
+      }
+
+      const pkgRes = await fetch('/api/packages');
+      const pkgData = await pkgRes.json();
+      if (pkgData.packages) {
+        setUserPackages(pkgData.packages);
+        setTotalRemainingLessons(pkgData.total_remaining || 0);
       }
     } catch (e) {
       console.error('Failed to load dashboard:', e);
@@ -294,6 +318,42 @@ export default function ParentDashboardPage() {
       setPasswordErr(err.message || 'Ошибка смены пароля');
     } finally {
       setChangingPassword(false);
+    }
+  };
+
+  const handleBuyPackageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBuyingPackage(true);
+    setPackageMsg('');
+
+    try {
+      const res = await fetch('/api/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'purchase',
+          count: selectedPackageCount,
+          parent_name: profile.full_name,
+          parent_phone: profile.phone,
+          child_name: children[0]?.name || '',
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setPackageMsg('🎉 Заявка на абонемент создана! После оплаты у вас будет доступны уроки для быстрой записи.');
+        await loadDashboardData();
+        setTimeout(() => {
+          setShowPackageModal(false);
+          setPackageMsg('');
+        }, 3000);
+      } else {
+        throw new Error(data.error || 'Ошибка оформления абонемента');
+      }
+    } catch (err: any) {
+      setPackageMsg(`❌ ${err.message}`);
+    } finally {
+      setBuyingPackage(false);
     }
   };
 
@@ -475,7 +535,7 @@ export default function ParentDashboardPage() {
         </div>
 
         {/* Навигация по вкладкам */}
-        <div className="flex border-b-2 border-[#1F1E1D]/10 mb-6 gap-2">
+        <div className="flex border-b-2 border-[#1F1E1D]/10 mb-6 gap-2 flex-wrap">
           <button
             onClick={() => setActiveTab('bookings')}
             className={`pb-3 px-4 font-mono text-xs font-bold uppercase transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
@@ -486,6 +546,18 @@ export default function ParentDashboardPage() {
           >
             <Calendar className="w-4 h-4" />
             <span>Мои записи ({bookings.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('packages')}
+            className={`pb-3 px-4 font-mono text-xs font-bold uppercase transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+              activeTab === 'packages'
+                ? 'border-[#C85A32] text-[#C85A32]'
+                : 'border-transparent text-[#595652] hover:text-[#1F1E1D]'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Абонементы ({totalRemainingLessons} уроков)</span>
           </button>
 
           <button
@@ -633,6 +705,100 @@ export default function ParentDashboardPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ВКЛАДКА: АБОНЕМЕНТЫ И ПАКЕТНЫЕ ЗАНЯТИЯ */}
+        {activeTab === 'packages' && (
+          <div className="space-y-6">
+            <div className="bg-[#FAF8F5] border-2 border-[#1F1E1D] rounded-3xl p-6 sm:p-8 hard-shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#C85A32]/30 bg-[#C85A32]/10 text-[#C85A32] text-xs font-mono font-bold mb-2">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Удобная запись без каждый раз оплаты</span>
+                </div>
+                <h2 className="font-serif font-extrabold text-2xl text-[#1F1E1D]">
+                  Пакеты онлайн-уроков
+                </h2>
+                <p className="text-xs sm:text-sm text-[#595652] mt-1 max-w-xl">
+                  Приобретайте абонемент на 4, 8 или 12 уроков для вашего ребёнка. Записывайтесь на любые удобные слоты в 1 клик со списанием баланса занятий!
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border-2 border-[#1F1E1D] hard-shadow-sm">
+                <div className="text-right">
+                  <span className="text-3xl font-mono font-extrabold text-[#C85A32]">
+                    {totalRemainingLessons}
+                  </span>
+                  <span className="text-xs font-mono text-[#595652] block">уроков на балансе</span>
+                </div>
+                <button
+                  onClick={() => setShowPackageModal(true)}
+                  className="px-5 py-3 rounded-xl bg-[#C85A32] hover:bg-[#B34D28] text-white font-mono text-xs font-bold hard-shadow transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Купить абонемент</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Карточки купленных абонементов */}
+            <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 hard-shadow">
+              <h3 className="font-serif font-bold text-xl text-[#1F1E1D] mb-4">
+                Ваши абонементы
+              </h3>
+
+              {userPackages.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-[#1F1E1D]/20 rounded-2xl p-6">
+                  <BookOpen className="w-10 h-10 text-[#595652]/40 mx-auto mb-3" />
+                  <p className="text-xs text-[#595652] font-mono mb-4">
+                    У вас пока нет активных абонементов.
+                  </p>
+                  <button
+                    onClick={() => setShowPackageModal(true)}
+                    className="px-5 py-2.5 rounded-xl bg-[#1F1E1D] text-white font-mono text-xs font-bold hard-shadow hover:bg-[#C85A32] transition-colors cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <span>Выбрать пакет (4, 8 или 12 уроков) ➔</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {userPackages.map((pkg) => (
+                    <div key={pkg.id} className="border-2 border-[#1F1E1D] rounded-2xl p-5 bg-[#FAF8F5] hard-shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="font-mono text-xs font-bold uppercase text-[#595652]">
+                            Пакет на {pkg.total_lessons} занятий
+                          </span>
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${pkg.remaining_lessons > 0 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-gray-200 text-gray-700'}`}>
+                            {pkg.remaining_lessons > 0 ? 'АКТИВЕН' : 'ИСПОЛЬЗОВАН'}
+                          </span>
+                        </div>
+                        <div className="text-2xl font-mono font-bold text-[#1F1E1D] mb-2">
+                          Осталось: <span className="text-[#C85A32]">{pkg.remaining_lessons}</span> / {pkg.total_lessons} уроков
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden border border-[#1F1E1D]/10 mb-4">
+                          <div
+                            className="bg-[#C85A32] h-full transition-all duration-300"
+                            style={{ width: `${(pkg.remaining_lessons / pkg.total_lessons) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {pkg.remaining_lessons > 0 && (
+                        <button
+                          onClick={() => setIsBookingOpen(true)}
+                          className="w-full py-2.5 rounded-xl border border-[#1F1E1D] bg-white hover:bg-[#C85A32] hover:text-white text-[#1F1E1D] text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Записаться по абонементу ➔</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1118,6 +1284,102 @@ export default function ParentDashboardPage() {
       <footer className="border-t border-[#1F1E1D]/10 py-6 text-center text-xs font-mono text-[#595652]">
         © 2026 Уроки Скоковой Юлии Павловны. Личный кабинет родителя.
       </footer>
+
+      {/* Модальное окно покупки абонемента */}
+      {showPackageModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-[#1F1E1D] rounded-3xl p-6 max-w-lg w-full hard-shadow-lg relative animate-in fade-in zoom-in-95">
+            <button
+              onClick={() => setShowPackageModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 text-[#1F1E1D] transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 text-[#C85A32] font-mono text-xs font-bold uppercase mb-2">
+              <Sparkles className="w-4 h-4" />
+              <span>Покупка абонемента</span>
+            </div>
+
+            <h3 className="font-serif font-bold text-2xl text-[#1F1E1D] mb-2">
+              Выберите пакет занятий
+            </h3>
+            <p className="text-xs text-[#595652] mb-6">
+              Стоимость одного урока в пакете — 600 ₽. Выберите количество уроков для зачисления:
+            </p>
+
+            {packageMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-500/30 text-emerald-800 text-xs font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{packageMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleBuyPackageSubmit} className="space-y-6">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { count: 4, price: 2400 },
+                  { count: 8, price: 4800 },
+                  { count: 12, price: 7200 },
+                ].map((item) => (
+                  <button
+                    type="button"
+                    key={item.count}
+                    onClick={() => setSelectedPackageCount(item.count)}
+                    className={`p-4 rounded-2xl border-2 transition-all text-center cursor-pointer flex flex-col justify-between ${
+                      selectedPackageCount === item.count
+                        ? 'border-[#C85A32] bg-[#C85A32]/5 text-[#C85A32] hard-shadow-sm'
+                        : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
+                    }`}
+                  >
+                    <span className="font-serif font-extrabold text-xl">{item.count} уроков</span>
+                    <span className="font-mono text-xs font-bold mt-2 text-[#595652]">
+                      {item.price.toLocaleString('ru-RU')} ₽
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Реквизиты оплаты */}
+              <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#1F1E1D]/15 space-y-2">
+                <span className="text-[10px] font-mono font-bold uppercase text-[#595652] block">
+                  Итого к оплате через СБП:
+                </span>
+                <div className="text-2xl font-serif font-extrabold text-[#C85A32]">
+                  {(selectedPackageCount * 600).toLocaleString('ru-RU')} ₽
+                </div>
+                <div className="text-xs text-[#595652] pt-2 border-t border-[#1F1E1D]/10">
+                  Перевод по СБП: <span className="font-mono font-bold text-[#1F1E1D]">+7 (960) 837-47-06</span> (Т-Банк / Сбербанк, Юлия П.)
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowPackageModal(false)}
+                  className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-bold text-[#1F1E1D]"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={buyingPackage}
+                  className="flex-1 bg-[#C85A32] hover:bg-[#B34D28] disabled:opacity-40 text-white text-sm font-semibold py-3 px-4 rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {buyingPackage ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Оформление...</span>
+                    </>
+                  ) : (
+                    <span>Подтвердить покупку абонемента</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Модальное окно записи */}
       <BookingModal isOpen={isBookingOpen} onClose={() => setIsBookingOpen(false)} />

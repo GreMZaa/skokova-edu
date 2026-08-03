@@ -64,6 +64,12 @@ export function verifyAdminSessionToken(token: string): AdminSession | null {
   }
 }
 
+export const ALLOWED_ADMIN_EMAILS = [
+  'lev-drakon2010@mail.ru',
+  'yulia2470@mail.ru',
+  'admin@skokova-edu.ru',
+];
+
 export function getAdminSessionFromRequest(req: Request): AdminSession | null {
   // 1. Проверяем HTTP Cookie skokova_admin_token
   const cookieHeader = req.headers.get('cookie') || '';

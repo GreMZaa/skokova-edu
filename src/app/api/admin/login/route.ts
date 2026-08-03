@@ -10,6 +10,7 @@ import {
   clearAdminSessionCookie,
   getAdminSessionFromRequest,
   sanitizeError,
+  ALLOWED_ADMIN_EMAILS,
 } from '@/lib/security';
 
 function sanitizeEnv(val?: string): string {
@@ -158,6 +159,17 @@ export async function POST(req: Request) {
 
         const cleanEmail = String(email || '').trim().toLowerCase();
         const cleanPassword = String(password || '').trim();
+
+        const allowedEmails = ALLOWED_ADMIN_EMAILS.concat(
+          (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+        );
+
+        if (allowedEmails.length > 0 && !allowedEmails.includes(cleanEmail)) {
+          return NextResponse.json(
+            { success: false, error: 'У вас нет прав администратора' },
+            { status: 403 }
+          );
+        }
 
         const { data: authData, error: authErr } = await supabaseClient.auth.signInWithPassword({
           email: cleanEmail,
