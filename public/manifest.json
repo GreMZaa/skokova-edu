@@ -1,0 +1,16 @@
+{
+  "name": "Скокова Юлия Павловна | Эксперт по развитию и подготовке к школе",
+  "short_name": "Юлия Скокова",
+  "description": "Интерактивные онлайн-уроки подготовки к школе (5–7 лет) и репетиторство для 1–4 классов.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf8f5",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
