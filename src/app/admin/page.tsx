@@ -733,11 +733,14 @@ export default function AdminPage() {
 
             {/* Кнопка обновления */}
             <button
-              onClick={fetchRealBookings}
-              title="Обновить список заявок"
+              onClick={() => {
+                fetchRealBookings();
+                fetchAdminPackages();
+              }}
+              title="Обновить данные"
               className="p-2.5 rounded-xl border-2 border-[#1F1E1D]/20 bg-white hover:bg-[#FAF8F5] text-[#595652] hover:text-[#1F1E1D] transition-colors cursor-pointer shrink-0"
             >
-              <RefreshCw className={`w-4 h-4 ${loadingBookings ? 'animate-spin text-[#C85A32]' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${(loadingBookings || loadingPackages) ? 'animate-spin text-[#C85A32]' : ''}`} />
             </button>
 
             {/* Вспомогательные кнопки */}
@@ -770,24 +773,30 @@ export default function AdminPage() {
         </div>
 
         {/* СЕКЦИЯ: ЗАЯВКИ НА АБОНЕМЕНТЫ */}
-        {adminPackages.length > 0 && (
-          <div className="bg-amber-50/60 border-2 border-[#1F1E1D] rounded-3xl p-5 sm:p-6 hard-shadow mb-6 space-y-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-[#C85A32]" />
-                <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
-                  Заявки на абонементы ({adminPackages.filter((p) => p.status === 'pending_payment').length} на проверке)
-                </h3>
-              </div>
-              <button
-                onClick={fetchAdminPackages}
-                className="text-xs font-mono text-[#C85A32] hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingPackages ? 'animate-spin' : ''}`} />
-                <span>Обновить абонементы</span>
-              </button>
+        <div className="bg-amber-50/60 border-2 border-[#1F1E1D] rounded-3xl p-5 sm:p-6 hard-shadow mb-6 space-y-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#C85A32]" />
+              <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
+                Заявки на абонементы ({adminPackages.filter((p) => p.status === 'pending_payment').length} на проверке)
+              </h3>
             </div>
+            <button
+              onClick={fetchAdminPackages}
+              className="text-xs font-mono text-[#C85A32] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingPackages ? 'animate-spin' : ''}`} />
+              <span>Обновить абонементы</span>
+            </button>
+          </div>
 
+          {adminPackages.length === 0 ? (
+            <div className="text-center py-6 border-2 border-dashed border-[#1F1E1D]/20 rounded-2xl bg-white p-4">
+              <p className="text-xs text-[#595652] font-mono">
+                Пока нет созданных заявок на абонементы. После покупки родителями пакета (4, 8 или 12 уроков) заявка появится здесь для подтверждения оплаты.
+              </p>
+            </div>
+          ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {adminPackages.map((pkg) => (
                 <div
@@ -857,8 +866,8 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Фильтры статусов */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-none snap-x">
