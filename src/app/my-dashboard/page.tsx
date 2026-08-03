@@ -98,6 +98,7 @@ export default function ParentDashboardPage() {
   const [totalRemainingLessons, setTotalRemainingLessons] = useState<number>(0);
   const [showPackageModal, setShowPackageModal] = useState<boolean>(false);
   const [selectedPackageCount, setSelectedPackageCount] = useState<number>(4);
+  const [selectedPackageFormat, setSelectedPackageFormat] = useState<'online' | 'offline'>('online');
   const [buyingPackage, setBuyingPackage] = useState<boolean>(false);
   const [packageMsg, setPackageMsg] = useState<string>('');
 
@@ -333,6 +334,7 @@ export default function ParentDashboardPage() {
         body: JSON.stringify({
           action: 'purchase',
           count: selectedPackageCount,
+          format: selectedPackageFormat,
           parent_name: profile.full_name,
           parent_phone: profile.phone,
           child_name: children[0]?.name || '',
@@ -1356,8 +1358,43 @@ export default function ParentDashboardPage() {
             <h3 className="font-serif font-bold text-2xl text-[#1F1E1D] mb-2">
               Выберите пакет занятий
             </h3>
-            <p className="text-xs text-[#595652] mb-6">
-              Стоимость одного урока в пакете — 600 ₽. Выберите количество уроков для зачисления:
+
+            {/* Выбор формата занятий: Онлайн / Офлайн */}
+            <div className="mb-4 space-y-1.5">
+              <label className="text-xs font-mono font-bold uppercase text-[#595652] block">
+                Выберите формат занятий:
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPackageFormat('online')}
+                  className={`p-3 rounded-2xl border-2 font-mono text-xs transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                    selectedPackageFormat === 'online'
+                      ? 'border-[#C85A32] bg-[#C85A32]/10 text-[#C85A32] hard-shadow-sm font-bold'
+                      : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
+                  }`}
+                >
+                  <span className="text-sm font-extrabold">💻 Онлайн</span>
+                  <span className="text-[11px] opacity-80">600 ₽ / урок</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPackageFormat('offline')}
+                  className={`p-3 rounded-2xl border-2 font-mono text-xs transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                    selectedPackageFormat === 'offline'
+                      ? 'border-[#C85A32] bg-[#C85A32]/10 text-[#C85A32] hard-shadow-sm font-bold'
+                      : 'border-[#1F1E1D]/20 bg-white text-[#1F1E1D] hover:border-[#1F1E1D]'
+                  }`}
+                >
+                  <span className="text-sm font-extrabold">🏫 Офлайн (Очно)</span>
+                  <span className="text-[11px] opacity-80">800 ₽ / урок</span>
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#595652] mb-4">
+              Тариф: <strong className="text-[#1F1E1D]">{selectedPackageFormat === 'online' ? 'Онлайн (600 ₽ / урок)' : 'Офлайн (800 ₽ / урок)'}</strong>. Выберите количество уроков для зачисления:
             </p>
 
             {packageMsg && (
@@ -1370,9 +1407,9 @@ export default function ParentDashboardPage() {
             <form onSubmit={handleBuyPackageSubmit} className="space-y-6">
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { count: 4, price: 2400 },
-                  { count: 8, price: 4800 },
-                  { count: 12, price: 7200 },
+                  { count: 4, price: 4 * (selectedPackageFormat === 'online' ? 600 : 800) },
+                  { count: 8, price: 8 * (selectedPackageFormat === 'online' ? 600 : 800) },
+                  { count: 12, price: 12 * (selectedPackageFormat === 'online' ? 600 : 800) },
                 ].map((item) => (
                   <button
                     type="button"
@@ -1395,10 +1432,10 @@ export default function ParentDashboardPage() {
               {/* Реквизиты оплаты */}
               <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#1F1E1D]/15 space-y-2">
                 <span className="text-[10px] font-mono font-bold uppercase text-[#595652] block">
-                  Итого к оплате через СБП:
+                  Итого к оплате ({selectedPackageFormat === 'online' ? 'Онлайн' : 'Офлайн'}) через СБП:
                 </span>
                 <div className="text-2xl font-serif font-extrabold text-[#C85A32]">
-                  {(selectedPackageCount * 600).toLocaleString('ru-RU')} ₽
+                  {(selectedPackageCount * (selectedPackageFormat === 'online' ? 600 : 800)).toLocaleString('ru-RU')} ₽
                 </div>
                 <div className="text-xs text-[#595652] pt-2 border-t border-[#1F1E1D]/10">
                   Перевод по СБП: <span className="font-mono font-bold text-[#1F1E1D]">+7 (960) 837-47-06</span> (Т-Банк / Сбербанк, Юлия П.)

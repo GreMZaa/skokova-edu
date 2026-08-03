@@ -53,32 +53,56 @@ export async function POST(request: Request) {
 
     if (action === 'purchase') {
       const lessonCount = [4, 8, 12].includes(Number(count)) ? Number(count) : 4;
-      const pricePerLesson = 600; // Стандартная цена без скидки
+      const isOffline = body.format === 'offline';
+      const pricePerLesson = isOffline ? 800 : 600;
       const pricePaid = lessonCount * pricePerLesson;
+      const formatTitle = isOffline ? '🏫 Офлайн (Очно - 800 ₽/урок)' : '💻 Онлайн (600 ₽/урок)';
 
       // Новые заявки создаются со статусом 'pending_payment' (на проверке у преподавателя)
-      const { data: newPkg, error } = await adminSupabase
-        .from('user_packages')
-        .insert({
-          user_id: user?.id || null,
-          parent_name: parent_name || '',
-          parent_phone: parent_phone || '',
-          child_name: child_name || '',
-          total_lessons: lessonCount,
-          remaining_lessons: lessonCount,
-          price_paid: pricePaid,
-          status: 'pending_payment',
-        })
-        .select()
-        .single();
+      let newPkg = null;
+      try {
+        const { data: pkgWithFormat, error: fErr } = await adminSupabase
+          .from('user_packages')
+          .insert({
+            user_id: user?.id || null,
+            parent_name: parent_name || '',
+            parent_phone: parent_phone || '',
+            child_name: child_name || '',
+            total_lessons: lessonCount,
+            remaining_lessons: lessonCount,
+            price_paid: pricePaid,
+            status: 'pending_payment',
+            format: isOffline ? 'offline' : 'online',
+          })
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (fErr) throw fErr;
+        newPkg = pkgWithFormat;
+      } catch (e) {
+        const { data: fallbackPkg, error: fbErr } = await adminSupabase
+          .from('user_packages')
+          .insert({
+            user_id: user?.id || null,
+            parent_name: parent_name || '',
+            parent_phone: parent_phone || '',
+            child_name: child_name || '',
+            total_lessons: lessonCount,
+            remaining_lessons: lessonCount,
+            price_paid: pricePaid,
+            status: 'pending_payment',
+          })
+          .select()
+          .single();
+        if (fbErr) throw fbErr;
+        newPkg = fallbackPkg;
+      }
 
       // Отправка уведомления преподавателю в Telegram
       try {
         const { sendTelegramNotification, escapeMarkdown } = await import('@/lib/telegram');
         await sendTelegramNotification({
-          text: `🎟️ *НОВАЯ ЗАЯВКА НА АБОНЕМЕНТ*\n\n👤 *Родитель:* ${escapeMarkdown(parent_name || 'Родитель')}\n📞 *Телефон:* ${escapeMarkdown(parent_phone || 'Не указан')}\n👶 *Ребёнок:* ${escapeMarkdown(child_name || 'Не указан')}\n📦 *Выбран пакет:* ${lessonCount} уроков (${pricePaid.toLocaleString('ru-RU')} ₽)\n\n⏳ *Статус:* На проверке. Подтвердите оплату в панели администратора!`,
+          text: `🎟️ *НОВАЯ ЗАЯВКА НА АБОНЕМЕНТ*\n\n👤 *Родитель:* ${escapeMarkdown(parent_name || 'Родитель')}\n📞 *Телефон:* ${escapeMarkdown(parent_phone || 'Не указан')}\n👶 *Ребёнок:* ${escapeMarkdown(child_name || 'Не указан')}\n📍 *Тариф:* ${formatTitle}\n📦 *Выбран пакет:* ${lessonCount} уроков (${pricePaid.toLocaleString('ru-RU')} ₽)\n\n⏳ *Статус:* На проверке. Подтвердите оплату в панели администратора!`,
           parseMode: 'Markdown',
         });
       } catch (tgErr) {
