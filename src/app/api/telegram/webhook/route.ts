@@ -542,12 +542,7 @@ async function renderServicesScreen(botToken: string, chatId: number, session: a
 }
 
 async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any, messageId?: number) {
-  const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
-    `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
-    `• Подготовка к школе без слёз и нервов (5–7 лет)\n` +
-    `• Начальные классы (1–4 классы): математика, русский язык, чтение\n` +
-    `• Подготовка к ВПР, ОГЭ, ЕГЭ\n\n` +
-    `✨ *Выберите нужный раздел ниже:*`;
+  const welcomeText = `👋 *Здравствуйте, ${firstName}!*`;
 
   await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
 }
