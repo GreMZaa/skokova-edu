@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
     const adminSupabase = createAdminClient();
 
-    let query = adminSupabase.from('user_packages').select('*').eq('status', 'active');
+    let query = adminSupabase.from('user_packages').select('*').order('created_at', { ascending: false });
 
     if (user) {
       query = query.eq('user_id', user.id);
@@ -29,7 +29,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ packages: [], total_remaining: 0 });
     }
 
-    const totalRemaining = (packages || []).reduce((acc: number, p: any) => acc + (p.remaining_lessons || 0), 0);
+    // Уроки считаются доступными только из подтвержденных (active) абонементов
+    const activePackages = (packages || []).filter((p: any) => p.status === 'active');
+    const totalRemaining = activePackages.reduce((acc: number, p: any) => acc + (p.remaining_lessons || 0), 0);
 
     return NextResponse.json({
       packages: packages || [],
@@ -54,6 +56,7 @@ export async function POST(request: Request) {
       const pricePerLesson = 600; // Стандартная цена без скидки
       const pricePaid = lessonCount * pricePerLesson;
 
+      // Новые заявки создаются со статусом 'pending_payment' (на проверке у преподавателя)
       const { data: newPkg, error } = await adminSupabase
         .from('user_packages')
         .insert({
@@ -64,12 +67,23 @@ export async function POST(request: Request) {
           total_lessons: lessonCount,
           remaining_lessons: lessonCount,
           price_paid: pricePaid,
-          status: 'active',
+          status: 'pending_payment',
         })
         .select()
         .single();
 
       if (error) throw error;
+
+      // Отправка уведомления преподавателю в Telegram
+      try {
+        const { sendTelegramNotification, escapeMarkdown } = await import('@/lib/telegram');
+        await sendTelegramNotification({
+          text: `🎟️ *НОВАЯ ЗАЯВКА НА АБОНЕМЕНТ*\n\n👤 *Родитель:* ${escapeMarkdown(parent_name || 'Родитель')}\n📞 *Телефон:* ${escapeMarkdown(parent_phone || 'Не указан')}\n👶 *Ребёнок:* ${escapeMarkdown(child_name || 'Не указан')}\n📦 *Выбран пакет:* ${lessonCount} уроков (${pricePaid.toLocaleString('ru-RU')} ₽)\n\n⏳ *Статус:* На проверке. Подтвердите оплату в панели администратора!`,
+          parseMode: 'Markdown',
+        });
+      } catch (tgErr) {
+        console.error('Telegram package notification error:', tgErr);
+      }
 
       return NextResponse.json({ success: true, package: newPkg });
     }

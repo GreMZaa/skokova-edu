@@ -799,26 +799,45 @@ export default function ParentDashboardPage() {
                   {userPackages.map((pkg) => (
                     <div key={pkg.id} className="border-2 border-[#1F1E1D] rounded-2xl p-5 bg-[#FAF8F5] hard-shadow-sm flex flex-col justify-between">
                       <div>
-                        <div className="flex justify-between items-center mb-3">
+                        <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                           <span className="font-mono text-xs font-bold uppercase text-[#595652]">
                             Пакет на {pkg.total_lessons} занятий
                           </span>
-                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${pkg.remaining_lessons > 0 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-gray-200 text-gray-700'}`}>
-                            {pkg.remaining_lessons > 0 ? 'АКТИВЕН' : 'ИСПОЛЬЗОВАН'}
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                            pkg.status === 'pending_payment'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : pkg.status === 'active'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-gray-200 text-gray-700'
+                          }`}>
+                            {pkg.status === 'pending_payment'
+                              ? '⏳ НА ПРОВЕРКЕ'
+                              : pkg.status === 'active'
+                              ? '✅ АКТИВЕН'
+                              : 'ИСПОЛЬЗОВАН'}
                           </span>
                         </div>
-                        <div className="text-2xl font-mono font-bold text-[#1F1E1D] mb-2">
-                          Осталось: <span className="text-[#C85A32]">{pkg.remaining_lessons}</span> / {pkg.total_lessons} уроков
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden border border-[#1F1E1D]/10 mb-4">
-                          <div
-                            className="bg-[#C85A32] h-full transition-all duration-300"
-                            style={{ width: `${(pkg.remaining_lessons / pkg.total_lessons) * 100}%` }}
-                          />
-                        </div>
+
+                        {pkg.status === 'pending_payment' ? (
+                          <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 p-3 rounded-xl mb-4 font-mono leading-relaxed">
+                            ⏳ Заявка на {pkg.total_lessons} уроков ({pkg.price_paid?.toLocaleString('ru-RU')} ₽) находится на проверке у Юлии Павловны. После подтверждения оплаты уроки появятся на балансе.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-2xl font-mono font-bold text-[#1F1E1D] mb-2">
+                              Осталось: <span className="text-[#C85A32]">{pkg.remaining_lessons}</span> / {pkg.total_lessons} уроков
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden border border-[#1F1E1D]/10 mb-4">
+                              <div
+                                className="bg-[#C85A32] h-full transition-all duration-300"
+                                style={{ width: `${(pkg.remaining_lessons / pkg.total_lessons) * 100}%` }}
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
 
-                      {pkg.remaining_lessons > 0 && (
+                      {pkg.status === 'active' && pkg.remaining_lessons > 0 && (
                         <button
                           onClick={() => setIsBookingOpen(true)}
                           className="w-full py-2.5 rounded-xl border border-[#1F1E1D] bg-white hover:bg-[#C85A32] hover:text-white text-[#1F1E1D] text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"

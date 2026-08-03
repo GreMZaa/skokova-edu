@@ -78,6 +78,19 @@ export interface PaymentMethodItem {
 
 const AVAILABLE_TIMES = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
+interface AdminPackageItem {
+  id: string;
+  user_id: string | null;
+  parent_name: string;
+  parent_phone: string;
+  child_name: string;
+  total_lessons: number;
+  remaining_lessons: number;
+  price_paid: number;
+  status: 'pending_payment' | 'active' | 'completed' | 'cancelled';
+  created_at: string;
+}
+
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [inputPin, setInputPin] = useState<string>('');
@@ -90,6 +103,10 @@ export default function AdminPage() {
   const [editingBooking, setEditingBooking] = useState<AdminBooking | null>(null);
   const [auditLogs, setAuditLogs] = useState<LoginLog[]>([]);
   const [showLogsModal, setShowLogsModal] = useState<boolean>(false);
+
+  // Управление абонементами
+  const [adminPackages, setAdminPackages] = useState<AdminPackageItem[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState<boolean>(false);
 
   // Модальное окно способов оплаты
   const [showRequisitesModal, setShowRequisitesModal] = useState<boolean>(false);
@@ -171,6 +188,7 @@ export default function AdminPage() {
           setBookings(data.bookings || []);
           fetchAuditLogs();
           fetchRequisites();
+          fetchAdminPackages();
           return;
         }
       } catch (e) {
@@ -201,6 +219,42 @@ export default function AdminPage() {
       }
     } catch (e) {
       console.error('Failed to fetch requisites:', e);
+    }
+  };
+
+  const fetchAdminPackages = async () => {
+    setLoadingPackages(true);
+    try {
+      const res = await fetch('/api/admin/packages', {
+        headers: { ...getAuthHeaders() },
+      });
+      const data = await res.json();
+      if (data.success && data.packages) {
+        setAdminPackages(data.packages);
+      }
+    } catch (e) {
+      console.error('Failed to fetch admin packages:', e);
+    } finally {
+      setLoadingPackages(false);
+    }
+  };
+
+  const handleUpdatePackageStatus = async (id: string, newStatus: string) => {
+    try {
+      const res = await fetch('/api/admin/packages', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ id, status: newStatus }),
+      });
+
+      if (res.ok) {
+        await fetchAdminPackages();
+      }
+    } catch (e) {
+      console.error('Package update status error:', e);
     }
   };
 
@@ -372,6 +426,7 @@ export default function AdminPage() {
       fetchRealBookings();
       fetchAuditLogs();
       fetchRequisites();
+      fetchAdminPackages();
     } catch (err: any) {
       setLoginError(err.message || 'Ошибка авторизации');
     } finally {
@@ -700,6 +755,97 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+
+        {/* СЕКЦИЯ: ЗАЯВКИ НА АБОНЕМЕНТЫ */}
+        {adminPackages.length > 0 && (
+          <div className="bg-amber-50/60 border-2 border-[#1F1E1D] rounded-3xl p-5 sm:p-6 hard-shadow mb-6 space-y-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#C85A32]" />
+                <h3 className="font-serif font-bold text-lg text-[#1F1E1D]">
+                  Заявки на абонементы ({adminPackages.filter((p) => p.status === 'pending_payment').length} на проверке)
+                </h3>
+              </div>
+              <button
+                onClick={fetchAdminPackages}
+                className="text-xs font-mono text-[#C85A32] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingPackages ? 'animate-spin' : ''}`} />
+                <span>Обновить абонементы</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {adminPackages.map((pkg) => (
+                <div
+                  key={pkg.id}
+                  className={`p-4 rounded-2xl border-2 bg-white hard-shadow-sm flex flex-col justify-between ${
+                    pkg.status === 'pending_payment'
+                      ? 'border-amber-400'
+                      : pkg.status === 'active'
+                      ? 'border-emerald-500'
+                      : 'border-gray-300'
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center flex-wrap gap-2">
+                      <span className="font-serif font-extrabold text-base text-[#1F1E1D]">
+                        Пакет на {pkg.total_lessons} уроков ({pkg.price_paid?.toLocaleString('ru-RU')} ₽)
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                          pkg.status === 'pending_payment'
+                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                            : pkg.status === 'active'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {pkg.status === 'pending_payment'
+                          ? '⏳ НА ПРОВЕРКЕ'
+                          : pkg.status === 'active'
+                          ? '✅ АКТИВЕН'
+                          : 'ОТКЛОНЁН/ИСПОЛЬЗОВАН'}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-[#595652] space-y-1 font-mono">
+                      <div>Родитель: <strong className="text-[#1F1E1D]">{pkg.parent_name || 'Не указано'}</strong> ({pkg.parent_phone})</div>
+                      {pkg.child_name && <div>Ребёнок: <strong className="text-[#1F1E1D]">{pkg.child_name}</strong></div>}
+                      <div>Дата заявки: {new Date(pkg.created_at).toLocaleString('ru-RU')}</div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 mt-3 border-t border-[#1F1E1D]/10 flex items-center gap-2">
+                    {pkg.status === 'pending_payment' && (
+                      <>
+                        <button
+                          onClick={() => handleUpdatePackageStatus(pkg.id, 'active')}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer hard-shadow-sm transition-all"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Подтвердить оплату и активировать</span>
+                        </button>
+                        <button
+                          onClick={() => handleUpdatePackageStatus(pkg.id, 'cancelled')}
+                          className="px-3 py-1.5 rounded-xl border border-red-300 bg-white hover:bg-red-50 text-red-600 font-mono text-xs font-bold cursor-pointer"
+                        >
+                          Отклонить
+                        </button>
+                      </>
+                    )}
+                    {pkg.status === 'active' && (
+                      <span className="text-xs font-mono text-emerald-700 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Оплата подтверждена. Доступно {pkg.remaining_lessons} из {pkg.total_lessons} уроков.</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Фильтры статусов */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-none snap-x">
