@@ -38,13 +38,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey || supabaseUrl.includes('your-project')) {
-      return NextResponse.json({ success: true, bookings: [] });
-    }
-
     const supabase = createAdminClient();
 
     // 1. Получаем все бронирования напрямую
