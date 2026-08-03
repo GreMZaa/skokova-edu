@@ -159,7 +159,7 @@ export default function AdminPage() {
       }
 
       try {
-        const token = sessionStorage.getItem('skokova_admin_token');
+        const token = sessionStorage.getItem('skokova_admin_token') || localStorage.getItem('skokova_admin_token');
         const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
         const res = await fetch('/api/admin/bookings', { headers });
@@ -362,6 +362,7 @@ export default function AdminPage() {
       const info = data.adminInfo || { name: 'Администратор' };
       if (data.token) {
         sessionStorage.setItem('skokova_admin_token', data.token);
+        localStorage.setItem('skokova_admin_token', data.token);
       }
       setIsAuthenticated(true);
       setAdminInfo(info);
@@ -517,7 +518,7 @@ export default function AdminPage() {
     }
   };
 
-  // ЭКРАН ВХОДА ПО EMAIL И ПАРОЛЮ
+  // ЭКРАН ВХОДА АДМИНИСТРАТОРА
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] text-[#1F1E1D] flex items-center justify-center p-4">
@@ -530,8 +531,37 @@ export default function AdminPage() {
               Панель преподавателя
             </h1>
             <p className="text-xs text-[#595652] font-mono">
-              Вход по Логину и Паролю
+              Безопасный вход для администраторов
             </p>
+          </div>
+
+          {/* Вкладки методов входа */}
+          <div className="flex border-b border-[#1F1E1D]/20 gap-2">
+            <button
+              type="button"
+              onClick={() => setAuthTab('supabase')}
+              className={`pb-2.5 px-3 font-mono text-xs font-bold border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                authTab === 'supabase'
+                  ? 'border-[#C85A32] text-[#C85A32]'
+                  : 'border-transparent text-[#595652]'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email / Телефон / PIN</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAuthTab('telegram')}
+              className={`pb-2.5 px-3 font-mono text-xs font-bold border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                authTab === 'telegram'
+                  ? 'border-[#C85A32] text-[#C85A32]'
+                  : 'border-transparent text-[#595652]'
+              }`}
+            >
+              <Send className="w-3.5 h-3.5 text-blue-500" />
+              <span>Код в Telegram</span>
+            </button>
           </div>
 
           {loginError && (
@@ -541,68 +571,203 @@ export default function AdminPage() {
             </div>
           )}
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAuthSubmit();
-            }}
-            className="space-y-4"
-          >
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                  Email или Логин:
-                </label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    value={supabaseEmail}
-                    onChange={(e) => setSupabaseEmail(e.target.value)}
-                    placeholder="example@mail.ru"
-                    className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
-                    autoFocus
-                    required
-                  />
-                  <Mail className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-mono font-bold uppercase text-[#595652]">
-                  Пароль:
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={supabasePassword}
-                    onChange={(e) => setSupabasePassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
-                    required
-                  />
-                  <Lock className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
-                </div>
-              </div>
+          {codeMsg && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-mono flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{codeMsg}</span>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+          {authTab === 'supabase' ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAuthSubmit();
+              }}
+              className="space-y-4"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Проверка данных...</span>
-                </>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                    Email, Логин или Телефон:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={supabaseEmail}
+                      onChange={(e) => setSupabaseEmail(e.target.value)}
+                      placeholder="lev-drakon2010@mail.ru или +79372144205"
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
+                      autoFocus
+                      required
+                    />
+                    <User className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                    Пароль или PIN-код:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={supabasePassword}
+                      onChange={(e) => setSupabasePassword(e.target.value)}
+                      placeholder="Введите пароль или PIN"
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-xs focus:outline-none focus:border-[#C85A32] transition-colors"
+                      required
+                    />
+                    <Lock className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Проверка данных...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Войти в панель администратора ➔</span>
+                  </>
+                )}
+              </button>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              {!telegramCodeSent ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-[#595652]">
+                    Нажмите кнопку ниже, чтобы получить 6-значный одноразовый код для входа в ваш Telegram бот.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={sendingCode}
+                    onClick={async () => {
+                      setSendingCode(true);
+                      setCodeMsg('');
+                      setLoginError('');
+                      try {
+                        const res = await fetch('/api/admin/telegram-code', { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) {
+                          setTelegramCodeSent(true);
+                          setTgVerificationToken(data.verificationToken || '');
+                          setTgCodeExpiresAt(data.expiresAt || 0);
+                          setCodeMsg('📩 Одноразовый 6-значный код отправлен в ваш Telegram!');
+                        } else {
+                          throw new Error(data.error || 'Ошибка отправки кода');
+                        }
+                      } catch (err: any) {
+                        setLoginError(err.message || 'Не удалось отправить код');
+                      } finally {
+                        setSendingCode(false);
+                      }
+                    }}
+                    className="w-full py-3 px-4 bg-[#1F1E1D] hover:bg-[#C85A32] text-white font-mono text-xs font-bold rounded-xl border-2 border-[#1F1E1D] hard-shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {sendingCode ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Отправка кода...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 text-blue-400" />
+                        <span>Запросить 6-значный код в Telegram ➔</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               ) : (
-                <>
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Войти в панель администратора ➔</span>
-                </>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setIsSubmitting(true);
+                    setLoginError('');
+                    try {
+                      const res = await fetch('/api/admin/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          authType: 'telegram',
+                          code: telegramCodeInput.trim(),
+                          verificationToken: tgVerificationToken,
+                          expiresAt: tgCodeExpiresAt,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok || !data.success) {
+                        throw new Error(data.error || 'Неверный код Telegram');
+                      }
+                      if (data.token) {
+                        sessionStorage.setItem('skokova_admin_token', data.token);
+                        localStorage.setItem('skokova_admin_token', data.token);
+                      }
+                      setIsAuthenticated(true);
+                      sessionStorage.setItem('skokova_admin_auth', 'true');
+                      fetchRealBookings();
+                      fetchAuditLogs();
+                      fetchRequisites();
+                    } catch (err: any) {
+                      setLoginError(err.message || 'Неверный код Telegram');
+                    } finally {
+                      setIsSubmitting(false);
+                    }
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="text-xs font-mono font-bold uppercase text-[#595652]">
+                      Введите 6-значный код из Telegram:
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={telegramCodeInput}
+                      onChange={(e) => setTelegramCodeInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      className="w-full px-4 py-3 rounded-xl border-2 border-[#1F1E1D] bg-[#FAF8F5] font-mono text-center text-lg font-bold tracking-widest focus:outline-none focus:border-[#C85A32]"
+                      autoFocus
+                      required
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTelegramCodeSent(false)}
+                      className="px-4 py-3 rounded-xl border-2 border-[#1F1E1D]/20 hover:border-[#1F1E1D] text-xs font-mono font-bold"
+                    >
+                      Назад
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 py-3 px-4 bg-[#C85A32] hover:bg-[#b04b27] text-white font-mono text-xs font-bold uppercase rounded-xl border-2 border-[#1F1E1D] hard-shadow cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Проверка...</span>
+                        </>
+                      ) : (
+                        <span>Войти в систему ➔</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
               )}
-            </button>
-          </form>
+            </div>
+          )}
 
           <div className="text-center pt-2">
             <a

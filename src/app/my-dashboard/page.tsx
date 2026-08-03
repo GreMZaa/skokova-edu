@@ -576,6 +576,39 @@ export default function ParentDashboardPage() {
         {/* ВКЛАДКА 1: МОИ УРОКИ */}
         {activeTab === 'bookings' && (
           <div className="space-y-4">
+            {/* Плашка баланса абонементов */}
+            <div className="bg-gradient-to-r from-[#FAF8F5] to-orange-50/60 border-2 border-[#1F1E1D] rounded-3xl p-5 hard-shadow flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#C85A32]/10 border border-[#C85A32]/30 flex items-center justify-center text-[#C85A32] shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-serif font-bold text-base text-[#1F1E1D]">
+                    Абонементы и пакеты уроков
+                  </h4>
+                  <p className="text-xs text-[#595652]">
+                    {totalRemainingLessons > 0
+                      ? `Доступно ${totalRemainingLessons} уроков для моментальной записи без повторных оплат`
+                      : 'Приобретайте пакет на 4, 8 или 12 уроков по 600 ₽/урок для быстрой записи'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                {totalRemainingLessons > 0 && (
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-100 border border-emerald-400 text-emerald-800 font-mono text-xs font-bold whitespace-nowrap">
+                    🎟️ {totalRemainingLessons} уроков
+                  </span>
+                )}
+                <button
+                  onClick={() => setShowPackageModal(true)}
+                  className="px-4 py-2.5 rounded-xl bg-[#C85A32] hover:bg-[#B34D28] text-white font-mono text-xs font-bold hard-shadow transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Приобрести абонемент</span>
+                </button>
+              </div>
+            </div>
             {bookings.length === 0 ? (
               <div className="bg-white border-2 border-[#1F1E1D]/20 rounded-3xl p-12 text-center">
                 <BookOpen className="w-12 h-12 text-[#595652]/40 mx-auto mb-4" />
