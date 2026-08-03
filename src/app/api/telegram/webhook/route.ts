@@ -469,8 +469,8 @@ async function buildSlotInlineKeyboard(supabase: any, page: number = 0) {
 
 async function syncBotDescription(botToken: string) {
   try {
-    const desc = 'Онлайн-школа и репетиторский центр Скоковой Юлии Павловны.\n\nПодготовка к школе (5–7 лет), математика, чтение, подготовка к 1–4 классам.\n\nЗапись на уроки, личный кабинет и консультации.';
-    const shortDesc = 'Официальный бот педагога Скоковой Юлии Павловны. Запись на уроки и личный кабинет.';
+    const desc = 'Скокова Юлия Павловна — Эксперт по развитию и подготовке к школе (опыт более 30 лет).\n\n• Подготовка к школе без слёз и нервов (5–7 лет)\n• Начальные классы (1–4 классы): математика, русский язык, чтение, литература\n• Подготовка к ВПР, ОГЭ, ЕГЭ\n\nИнтерактивные онлайн-уроки с использованием нейропедагогического подхода. Запись на занятие и личный кабинет.';
+    const shortDesc = 'Скокова Юлия Павловна — эксперт по развитию и подготовке к школе (опыт 30+ лет). Запись на онлайн-уроки.';
 
     await fetch(`https://api.telegram.org/bot${botToken}/setMyDescription`, {
       method: 'POST',
@@ -491,9 +491,8 @@ async function syncBotDescription(botToken: string) {
         commands: [
           { command: 'start', description: '🏠 Главное меню' },
           { command: 'menu', description: '🏠 Главное меню' },
-          { command: 'my', description: '👤 Мой кабинет' },
           { command: 'book', description: '📅 Записаться на урок' },
-          { command: 'payment', description: '💳 Реквизиты оплаты' },
+          { command: 'my', description: '👤 Мой кабинет' },
         ],
       }),
     });
@@ -544,8 +543,11 @@ async function renderServicesScreen(botToken: string, chatId: number, session: a
 
 async function renderMainMenuScreen(botToken: string, chatId: number, firstName: string, session: any, messageId?: number) {
   const welcomeText = `👋 *Здравствуйте, ${firstName}!*\n\n` +
-    `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по подготовке к школе (5–7 лет) и репетитора 1–4 классов (опыт 30+ лет).\n\n` +
-    `✨ *Выберите нужный раздел на интерактивных кнопках ниже:*`;
+    `Вас приветствует официальный бот педагога *Скоковой Юлии Павловны* — эксперта по развитию и подготовке к школе (опыт 30+ лет).\n\n` +
+    `• Подготовка к школе без слёз и нервов (5–7 лет)\n` +
+    `• Начальные классы (1–4 классы): математика, русский язык, чтение\n` +
+    `• Подготовка к ВПР, ОГЭ, ЕГЭ\n\n` +
+    `✨ *Выберите нужный раздел ниже:*`;
 
   await editOrSendMessage(botToken, chatId, messageId, welcomeText, mainInlineKeyboard, session);
 }
