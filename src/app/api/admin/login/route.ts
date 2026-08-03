@@ -33,8 +33,9 @@ export async function POST(req: Request) {
     const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
     const userAgent = req.headers.get('user-agent') || 'Unknown';
 
-    const targetAdminChatId = (process.env.ADMIN_TELEGRAM_IDS || '405845462').split(',')[0].trim();
-    const targetAdminHandle = (process.env.ADMIN_TELEGRAM_HANDLES || 'ssharonovv').split(',')[0].trim().replace(/^@/, '');
+    const targetAdminChatIds = (process.env.ADMIN_TELEGRAM_IDS || '405845462,510510041').split(',').map((id) => id.trim()).filter(Boolean);
+    const targetAdminChatId = targetAdminChatIds[0];
+    const targetAdminHandle = (process.env.ADMIN_TELEGRAM_HANDLES || 'ssharonovv,vasilina_original').split(',')[0].trim().replace(/^@/, '');
 
     let isSuccess = false;
     let authMethodUsed = 'unknown';

@@ -20,7 +20,7 @@ export function generateCodeToken(code: string, expiresAt: number, secret: strin
 export async function POST(req: Request) {
   try {
     const botToken = sanitizeEnv(process.env.TELEGRAM_BOT_TOKEN);
-    const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '405845462')
+    const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '405845462,510510041')
       .split(',')
       .map((id) => id.trim())
       .filter(Boolean);
