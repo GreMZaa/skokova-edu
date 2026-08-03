@@ -110,27 +110,42 @@ export async function POST(req: Request) {
         : (packageDeducted ? '[🎟️ Списано 1 занятие из абонемента]' : '');
 
       // 1. Создаём предзаявку с соответствующим статусом
-      const { data: bookingData, error: bookingError } = await supabase
-        .from('bookings')
-        .insert({
-          slot_id: slot_id || null,
-          user_id: user_id || null,
-          service_title,
-          price: packageDeducted ? 0 : price,
-          parent_name,
-          phone,
-          telegram_handle,
-          child_name,
-          child_grade,
-          comment: finalComment,
-          receipt_file_url: null,
-          status: initialStatus,
-          payment_method: paymentMethod,
-        })
-        .select()
-        .single();
+      let bookingData: any = null;
+      const baseInsert = {
+        slot_id: slot_id || null,
+        user_id: user_id || null,
+        service_title,
+        price: packageDeducted ? 0 : price,
+        parent_name,
+        phone,
+        telegram_handle,
+        child_name,
+        child_grade,
+        comment: finalComment,
+        receipt_file_url: null,
+        status: initialStatus,
+      };
 
-      if (bookingError) throw bookingError;
+      try {
+        const { data: bData, error: bErr } = await supabase
+          .from('bookings')
+          .insert({ ...baseInsert, payment_method: paymentMethod })
+          .select()
+          .single();
+
+        if (bErr) throw bErr;
+        bookingData = bData;
+      } catch (e) {
+        const { data: bDataFb, error: bErrFb } = await supabase
+          .from('bookings')
+          .insert(baseInsert)
+          .select()
+          .single();
+
+        if (bErrFb) throw bErrFb;
+        bookingData = bDataFb;
+      }
+
       if (bookingData) booking_id = bookingData.id;
 
       // 2. Помечаем время слота как забронированное в time_slots

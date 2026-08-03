@@ -267,15 +267,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         throw new Error(data.error || 'Не удалось создать предварительную заявку');
       }
 
-      // Списываем 1 урок из абонемента
-      if (isUsingPackage) {
-        await fetch('/api/packages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'use_lesson' }),
-        });
-      }
-
       setCurrentBookingId(data.booking_id);
       clearDraft();
       setStep(4);
