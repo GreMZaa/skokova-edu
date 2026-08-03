@@ -66,100 +66,30 @@ export async function POST(req: Request) {
 
     const botToken = sanitizeEnv(process.env.TELEGRAM_BOT_TOKEN);
 
-    // 1. АВТОРИЗАЦИЯ ЧЕРЕЗ TELEGRAM
-    if (authType === 'telegram') {
-      // А. Проверка 6-значного одноразового кода
-      if (code && String(code).trim().length > 0) {
-        const inputCode = String(code).trim();
-        let validCode = false;
+    // 1. АВТОРИЗАЦИЯ ЧЕРЕЗ TELEGRAM WIDGET (HMAC ПОДПИСЬ)
+    if (authType === 'telegram' && telegramWidgetData?.hash && botToken) {
+      const userId = String(telegramWidgetData.id || '').trim();
+      const username = String(telegramWidgetData.username || '').trim().replace(/^@/, '').toLowerCase();
 
-        // 1. Проверка HMAC токена (бессерверная проверка 100% точности без задержек DB)
-        if (verificationToken && expiresAt && botToken) {
-          const expectedToken = generateCodeToken(inputCode, Number(expiresAt), botToken);
-          if (expectedToken === verificationToken && Date.now() <= Number(expiresAt)) {
-            validCode = true;
-          }
-        }
+      const targetAdminChatIds = (process.env.ADMIN_TELEGRAM_IDS || '405845462,510510041').split(',').map((id) => id.trim()).filter(Boolean);
+      const isIdMatch = targetAdminChatIds.includes(userId);
 
-        // 2. Проверка в памяти процесса
-        if (!validCode) {
-          const memoryEntry = pendingTelegramCodes.get(targetAdminChatId);
-          if (memoryEntry && memoryEntry.code === inputCode && Date.now() <= memoryEntry.expiresAt) {
-            validCode = true;
-            pendingTelegramCodes.delete(targetAdminChatId);
-          }
-        }
-
-        // 3. Фолбэк: проверка в Supabase DB
-        if (!validCode) {
-          const supabaseUrl = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
-          const supabaseServiceKey = sanitizeEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
-          if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
-            try {
-              const supabase = createAdminClient();
-              const { data: dbSettings } = await supabase
-                .from('settings')
-                .select('phone, card_number')
-                .eq('id', 'admin_telegram_code')
-                .maybeSingle();
-
-              if (dbSettings?.phone && dbSettings?.card_number) {
-                const storedCode = dbSettings.phone;
-                const expTime = Number(dbSettings.card_number);
-                if (storedCode === inputCode && Date.now() <= expTime) {
-                  validCode = true;
-                }
-              }
-            } catch (e) {
-              console.warn('DB code check error:', e);
-            }
-          }
-        }
-
-        if (validCode) {
-          isSuccess = true;
-          authMethodUsed = 'telegram';
-          adminIdentifier = `telegram:@${targetAdminHandle} (${targetAdminChatId})`;
-          adminInfo = {
-            name: 'Сергей Шаронов',
-            handle: `@${targetAdminHandle}`,
-          };
-        }
-      }
-
-      // Б. Проверка официального виджета Telegram Widget с криптографической HMAC подписью
-      if (!isSuccess && telegramWidgetData?.hash && botToken) {
-        const userId = String(telegramWidgetData.id || '').trim();
-        const username = String(telegramWidgetData.username || '').trim().replace(/^@/, '').toLowerCase();
-
-        const isIdMatch = userId === targetAdminChatId;
-        const isHandleMatch = username === targetAdminHandle.toLowerCase();
-
-        if ((isIdMatch || isHandleMatch) && verifyTelegramWidgetData(telegramWidgetData, botToken)) {
-          isSuccess = true;
-          authMethodUsed = 'telegram';
-          adminIdentifier = `telegram:@${username || targetAdminHandle} (${userId})`;
-          adminInfo = {
-            name: `${telegramWidgetData.first_name || ''} ${telegramWidgetData.last_name || ''}`.trim() || 'Сергей Шаронов',
-            handle: `@${username || targetAdminHandle}`,
-            photoUrl: telegramWidgetData.photo_url || '',
-          };
-        }
+      if (isIdMatch && verifyTelegramWidgetData(telegramWidgetData, botToken)) {
+        isSuccess = true;
+        authMethodUsed = 'telegram_widget';
+        adminIdentifier = `telegram:@${username || 'admin'} (${userId})`;
+        adminInfo = {
+          name: `${telegramWidgetData.first_name || ''} ${telegramWidgetData.last_name || ''}`.trim() || 'Администратор',
+          handle: username ? `@${username}` : undefined,
+          photoUrl: telegramWidgetData.photo_url || '',
+        };
       }
     }
 
-    // 2. АВТОРИЗАЦИЯ ЧЕРЕЗ EMAIL / ТЕЛЕФОН / ПИН-КОД / SUPABASE AUTH
+    // 2. АВТОРИЗАЦИЯ ЧЕРЕЗ SUPABASE AUTH (EMAIL + ПАРОЛЬ)
     if (!isSuccess && (authType === 'supabase' || email || password)) {
-      const rawEmail = String(email || '').trim().toLowerCase();
-      const rawPassword = String(password || '').trim();
-
-      // Маппинг телефонов и псевдонимов на администраторские email
-      let cleanEmail = rawEmail;
-      if (rawEmail.includes('79372144205') || rawEmail.includes('drakon') || rawEmail === 'lev') {
-        cleanEmail = 'lev-drakon2010@mail.ru';
-      } else if (rawEmail.includes('79608374706') || rawEmail.includes('yulia') || rawEmail === 'julia') {
-        cleanEmail = 'yulia2470@mail.ru';
-      }
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanPassword = String(password || '').trim();
 
       const allowedEmails = ALLOWED_ADMIN_EMAILS.concat(
         (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
@@ -174,7 +104,6 @@ export async function POST(req: Request) {
         );
       }
 
-      // А. Проверка через Supabase Auth
       const supabaseUrl = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
       const supabaseAnonKey = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -185,7 +114,7 @@ export async function POST(req: Request) {
 
           const { data: authData, error: authErr } = await supabaseClient.auth.signInWithPassword({
             email: cleanEmail,
-            password: rawPassword,
+            password: cleanPassword,
           });
 
           if (!authErr && authData?.user) {
@@ -198,32 +127,7 @@ export async function POST(req: Request) {
             };
           }
         } catch (e) {
-          console.warn('Supabase auth check fallback note:', e);
-        }
-      }
-
-      // Б. Фолбэк: Проверка по телефоным PIN-кодам администратора (79372144205 / 79608374706 / 2470 / 2010 / skokova2026)
-      if (!isSuccess && isAllowedAdmin) {
-        const validPins = [
-          '79372144205',
-          '79608374706',
-          '2470',
-          '2010',
-          'skokova2026',
-          'admin2026',
-          '79372144205',
-          '79608374706',
-        ];
-
-        const cleanDigits = rawPassword.replace(/\D/g, '');
-        if (validPins.includes(rawPassword) || (cleanDigits.length >= 4 && validPins.some((p) => p.includes(cleanDigits)))) {
-          isSuccess = true;
-          authMethodUsed = 'pin';
-          adminIdentifier = `pin:${cleanEmail}`;
-          adminInfo = {
-            email: cleanEmail,
-            name: cleanEmail.includes('lev') ? 'Сергей Шаронов' : 'Скокова Юлия Павловна',
-          };
+          console.warn('Supabase auth check error:', e);
         }
       }
     }
