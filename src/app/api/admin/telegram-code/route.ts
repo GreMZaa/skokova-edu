@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/server';
+import { checkRateLimit, getClientIp, sanitizeError } from '@/lib/security';
 
 function sanitizeEnv(val?: string): string {
   if (!val) return '';
@@ -19,6 +20,20 @@ export function generateCodeToken(code: string, expiresAt: number, secret: strin
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс. 3 запроса генерации кода за 5 минут с одного IP
+    const rateCheck = checkRateLimit(`tg-code:${clientIp}`, 3, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Слишком много запросов кода. Пожалуйста, подождите 5 минут.',
+        },
+        { status: 429 }
+      );
+    }
+
     const botToken = sanitizeEnv(process.env.TELEGRAM_BOT_TOKEN);
     const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '405845462,510510041')
       .split(',')
@@ -27,11 +42,13 @@ export async function POST(req: Request) {
     const groupChatId = sanitizeEnv(process.env.TELEGRAM_TEACHER_CHAT_ID) || '-5128191766';
 
     if (!botToken || botToken.includes('123456789')) {
-      return NextResponse.json({
-        success: true,
-        fallbackMode: true,
-        message: 'Токен бота не задан на сервере. Доступ разрешён для администраторов.',
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'TELEGRAM_BOT_TOKEN не настроен на сервере.',
+        },
+        { status: 500 }
+      );
     }
 
     // Генерация 6-значного одноразового кода
@@ -109,6 +126,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('Send telegram code error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

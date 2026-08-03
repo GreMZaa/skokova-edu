@@ -1,0 +1,67 @@
+Bot API 10.1
+
+ Markup Revolution
+
+This update introduces native text styling tools to enable richly formatted messages in any chat. Bots can now deliver highly structured content like business reports or media slideshows, while AI agents can seamlessly stream complex replies in real time.
+
+Supported formats include:
+
+• Multi-level headings, paragraphs and dividers.
+• Lists and task lists – with support for custom numerals and ordering.
+• Deeply nested inline formatting, including all common styles plus spoiler, code, subscript, superscript and more.
+• Tables with alignment, captions, borders, striped styling and customizable cells.
+• Media blocks for photos, videos and audio files, with captions and credits.
+• Block and pull quotes, collapsible details blocks, anchors and in-document links.
+• Full LaTeX support – including both inline and multi-line expressions.
+• Maps with custom coordinates.
+• Polished media collages, smooth slideshows.
+• And more! Check out the list here or play around with our interactive demo.
+
+ Guardian Bots
+• Bots can now process join request queries as guardian bots and approve, decline or queue them – or simply open a Mini App to show the user a captcha or ask for extra info before deciding.
+
+ Polls
+• Poll option media now supports external links to any website.
+
+• And more, see the full changelog for details:
+https://core.telegram.org/bots/api-changelog#june-11-2026
+
+Bot API 10.2
+
+ Ephemeral Messages
+• Bots can now send ephemeral group messages that are visible only to a specific user – ideal for welcome messages, whispers, summaries and more.
+• Out of the box, ephemeral messages support most media types.
+• Bot commands can now be marked as ephemeral, letting users discretely reach out to bots in groups.
+• Bots can easily reply to ephemeral messages or delete them before they expire.
+
+ Rich Messages
+• Bots can now build outgoing rich messages directly from structured entity blocks, as an alternative to Markdown or HTML.
+• Rich messages using Markdown or HTML can now explicitly attach embedded media like photos, videos, animations and more.
+
+ Communities
+• Introduced initial support for Communities — several groups, channels, and bots linked together around a shared topic or audience.
+• Bots can already check which Community a chat belongs to and detect relevant service messages.
+
+• And more, see the full changelog for details:
+
+https://core.telegram.org/bots/api-changelog#july-14-2026
+
+ Warning: 
+Starting July 20, 2026, external websites opened from links inside your Mini App will no longer be able to use Mini App methods by default. Developers can opt out through the @BotFather Mini App. Read more here.
+
+API для ботов версии 9.5
+
+🗓 Форматирование даты и времени
+• Добавлена функция форматирования даты и времени, позволяющая ботам отображать пользователю отформатированную дату и время.
+• Встроенная поддержка относительного времени, локализованных названий дней недели и другого.
+
+👑 Настраиваемые теги участников
+• Добавлена поддержка настраиваемых тегов участников в группах.
+• Боты теперь могут обнаруживать теги участников, присваивать их или позволять администраторам управлять ими.
+
+📝 Потоковая передача сообщений
+• С сегодняшним обновлением каждый бот в Telegram может свободно использовать функцию потоковой передачи сообщений.
+
+• И многое другое. Подробности смотрите в полном списке изменений:
+
+https://core.telegram.org/bots/api-changelog#march-1-2026

@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/server';
 import { pendingTelegramCodes, generateCodeToken } from '../telegram-code/route';
+import {
+  checkRateLimit,
+  getClientIp,
+  generateAdminSessionToken,
+  setAdminSessionCookie,
+  clearAdminSessionCookie,
+  getAdminSessionFromRequest,
+  sanitizeError,
+} from '@/lib/security';
 
 function sanitizeEnv(val?: string): string {
   if (!val) return '';
@@ -27,11 +36,23 @@ function verifyTelegramWidgetData(data: Record<string, any>, botToken: string): 
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+    const userAgent = req.headers.get('user-agent') || 'Unknown';
+
+    // 12.9 Rate Limiting: макс. 5 попыток входа в минуту с одного IP
+    const rateCheck = checkRateLimit(`admin-login:${clientIp}`, 5, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Слишком много попыток входа. Пожалуйста, подождите 1 минуту.',
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const { authType, email, password, code, verificationToken, expiresAt, telegramWidgetData } = body;
-
-    const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
-    const userAgent = req.headers.get('user-agent') || 'Unknown';
 
     const targetAdminChatIds = (process.env.ADMIN_TELEGRAM_IDS || '405845462,510510041').split(',').map((id) => id.trim()).filter(Boolean);
     const targetAdminChatId = targetAdminChatIds[0];
@@ -124,17 +145,6 @@ export async function POST(req: Request) {
           };
         }
       }
-
-      // В. Фолбэк для Vercel если TELEGRAM_BOT_TOKEN еще не добавлен в переменные Vercel
-      if (!isSuccess && (!botToken || botToken.includes('123456789'))) {
-        isSuccess = true;
-        authMethodUsed = 'telegram';
-        adminIdentifier = `telegram:@${targetAdminHandle} (${targetAdminChatId})`;
-        adminInfo = {
-          name: 'Сергей Шаронов',
-          handle: `@${targetAdminHandle}`,
-        };
-      }
     }
 
     // 2. АВТОРИЗАЦИЯ ЧЕРЕЗ SUPABASE AUTH (EMAIL + ПАРОЛЬ)
@@ -199,20 +209,34 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({
+    // 12.1 Генерация криптографически подписанной серверной сессии
+    const sessionToken = generateAdminSessionToken(adminIdentifier, authMethodUsed);
+
+    const response = NextResponse.json({
       success: true,
       authMethod: authMethodUsed,
       adminInfo,
-      token: `admin-session-${authMethodUsed}-${Date.now()}`,
+      token: sessionToken,
       message: `Авторизация успешна (${authMethodUsed})`,
     });
+
+    // Устанавливаем HTTP-only защищённую cookie
+    setAdminSessionCookie(response, sessionToken);
+
+    return response;
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    // 12.2 Проверка прав админа для чтения логов
+    const session = getAdminSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const supabaseUrl = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
     const supabaseServiceKey = sanitizeEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -231,6 +255,20 @@ export async function GET() {
 
     return NextResponse.json({ success: true, logs });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+
+export async function DELETE() {
+  try {
+    const response = NextResponse.json({
+      success: true,
+      message: 'Сессия администратора завершена',
+    });
+    clearAdminSessionCookie(response);
+    return response;
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
+  }
+}
+

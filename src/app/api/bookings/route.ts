@@ -2,15 +2,32 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
 import { sendTelegramNotification, escapeMarkdown } from '@/lib/telegram';
+import {
+  checkRateLimit,
+  getClientIp,
+  validateReceiptFile,
+  sanitizeError,
+} from '@/lib/security';
 
 function sanitizeStr(val: any): string {
   if (typeof val !== 'string') return '';
   return val.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 }
 
-// POST: Создание пред-заказа (статус 'pending_payment' или 'receipt_uploaded')
+// POST: Создание пред-заказа (статус 'pending_payment')
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс 10 попыток бронирования в минуту с одного IP
+    const rateCheck = checkRateLimit(`bookings-post:${clientIp}`, 10, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Слишком много запросов. Пожалуйста, подождите 1 минуту.' },
+        { status: 429 }
+      );
+    }
+
     const formData = await req.formData();
 
     const slot_id = sanitizeStr(formData.get('slot_id'));
@@ -27,7 +44,8 @@ export async function POST(req: Request) {
     const comment = sanitizeStr(formData.get('comment'));
     const user_id = sanitizeStr(formData.get('user_id'));
 
-    const initialStatus = sanitizeStr(formData.get('status')) || 'pending_payment';
+    // 12.2 Mass Assignment Protection: статус при публичном заказе всегда 'pending_payment'
+    const initialStatus = 'pending_payment';
 
     if (!parent_name || !phone || !child_name) {
       return NextResponse.json(
@@ -145,13 +163,24 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('Booking creation error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
 
 // PATCH: Прикрепление чека и отправка заявки педагогу
 export async function PATCH(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс 10 попыток загрузки чека в минуту с одного IP
+    const rateCheck = checkRateLimit(`bookings-patch:${clientIp}`, 10, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Слишком много запросов. Пожалуйста, подождите 1 минуту.' },
+        { status: 429 }
+      );
+    }
+
     const formData = await req.formData();
     const booking_id = sanitizeStr(formData.get('booking_id'));
     const slot_id = sanitizeStr(formData.get('slot_id'));
@@ -175,6 +204,19 @@ export async function PATCH(req: Request) {
       );
     }
 
+    // 12.10 Безопасная валидация файла чека (Размер <= 10 МБ, Расширение, Magic Bytes)
+    const arrayBuffer = await receipt_file.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
+    const originalName = sanitizeStr(receipt_file.name || 'receipt.png');
+
+    const fileValidation = validateReceiptFile(fileBuffer, originalName, receipt_file.type);
+    if (!fileValidation.valid) {
+      return NextResponse.json(
+        { success: false, error: fileValidation.error || 'Недопустимый файл чека' },
+        { status: 400 }
+      );
+    }
+
     let receipt_file_url = '';
     let dbBooking: any = null;
 
@@ -184,15 +226,9 @@ export async function PATCH(req: Request) {
     if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
       const supabase = createAdminClient();
 
-      // 1. Загружаем чек в Supabase Storage
-      const originalName = sanitizeStr(receipt_file.name || 'receipt.png');
-      const rawExt = originalName.split('.').pop() || 'png';
-      const fileExt = rawExt.replace(/[^a-zA-Z0-9]/g, '');
-      const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt || 'png'}`;
-
-      const arrayBuffer = await receipt_file.arrayBuffer();
-      const fileBuffer = Buffer.from(arrayBuffer);
-      const contentType = receipt_file.type && receipt_file.type.includes('/') ? receipt_file.type : 'image/png';
+      // 1. Загружаем чек в закрытый бакет Supabase Storage с безопасным случайным именем
+      const fileName = fileValidation.safeFileName!;
+      const contentType = fileValidation.contentType!;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('receipts')
@@ -203,6 +239,10 @@ export async function PATCH(req: Request) {
 
       if (uploadError) {
         console.error('Storage upload error:', uploadError);
+        return NextResponse.json(
+          { success: false, error: 'Ошибка сохранения файла чека в хранилище' },
+          { status: 500 }
+        );
       } else if (uploadData) {
         const { data: publicUrlData } = supabase.storage
           .from('receipts')
@@ -237,7 +277,7 @@ export async function PATCH(req: Request) {
 
       dbBooking = fetchedBooking;
     } else {
-      receipt_file_url = `https://storage.demo/receipts/${receipt_file.name}`;
+      receipt_file_url = `https://storage.demo/receipts/${fileValidation.safeFileName}`;
     }
 
     // 5. Уведомление в Telegram Бот педагога/админов
@@ -304,6 +344,7 @@ export async function PATCH(req: Request) {
     });
   } catch (error: any) {
     console.error('Booking patch error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

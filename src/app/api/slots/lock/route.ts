@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { checkRateLimit, getClientIp, sanitizeError } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс 10 блокировок слота в минуту с одного IP
+    const rateCheck = checkRateLimit(`slot-lock:${clientIp}`, 10, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Слишком много запросов. Пожалуйста, подождите 1 минуту.' },
+        { status: 429 }
+      );
+    }
+
     const { slot_id } = await req.json();
 
     if (!slot_id) {
@@ -41,6 +53,7 @@ export async function POST(req: Request) {
       locked_until: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

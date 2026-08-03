@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { checkRateLimit, getClientIp, sanitizeError } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс 3 сброса пароля за 5 минут с одного IP
+    const rateCheck = checkRateLimit(`reset-pwd:${clientIp}`, 3, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Слишком много запросов. Пожалуйста, подождите 5 минут.' },
+        { status: 429 }
+      );
+    }
+
     const { email } = await req.json();
 
     if (!email || !email.includes('@')) {
@@ -76,11 +88,8 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('Reset password error:', error);
-    const msg = error.message?.includes('rate limit')
-      ? '⏳ Слишком много запросов подряд. Подождите 3-5 минут или откройте последнее полученное письмо.'
-      : error.message || 'Не удалось отправить ссылку сброса';
     return NextResponse.json(
-      { success: false, error: msg },
+      { success: false, error: sanitizeError(error, 'Не удалось отправить ссылку сброса') },
       { status: 500 }
     );
   }
@@ -122,8 +131,9 @@ export async function PATCH(req: Request) {
   } catch (error: any) {
     console.error('PATCH Reset password error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Ошибка обновления пароля' },
+      { success: false, error: sanitizeError(error, 'Ошибка обновления пароля') },
       { status: 500 }
     );
   }
 }
+

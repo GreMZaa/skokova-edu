@@ -250,6 +250,12 @@ export default function AdminPage() {
     setPaymentMethods((prev) => prev.filter((m) => m.id !== id));
   };
 
+  const getAuthHeaders = (): Record<string, string> => {
+    if (typeof window === 'undefined') return {};
+    const token = sessionStorage.getItem('skokova_admin_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const handleSaveRequisites = async () => {
     setSavingRequisites(true);
     setRequisitesMsg('');
@@ -257,7 +263,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           payment_methods: paymentMethods,
         }),
@@ -278,10 +287,14 @@ export default function AdminPage() {
   const fetchRealBookings = async () => {
     setLoadingBookings(true);
     try {
-      const res = await fetch('/api/admin/bookings');
+      const res = await fetch('/api/admin/bookings', {
+        headers: { ...getAuthHeaders() },
+      });
       const data = await res.json();
       if (data.success && data.bookings) {
         setBookings(data.bookings);
+      } else if (res.status === 401) {
+        setIsAuthenticated(false);
       }
     } catch (e) {
       console.error('Failed to fetch bookings:', e);
@@ -292,7 +305,9 @@ export default function AdminPage() {
 
   const fetchAuditLogs = async () => {
     try {
-      const res = await fetch('/api/admin/login');
+      const res = await fetch('/api/admin/login', {
+        headers: { ...getAuthHeaders() },
+      });
       const data = await res.json();
       if (data.success && data.logs) {
         setAuditLogs(data.logs);
@@ -341,6 +356,9 @@ export default function AdminPage() {
       }
 
       const info = data.adminInfo || { name: 'Администратор' };
+      if (data.token) {
+        sessionStorage.setItem('skokova_admin_token', data.token);
+      }
       setIsAuthenticated(true);
       setAdminInfo(info);
       sessionStorage.setItem('skokova_admin_auth', 'true');
@@ -358,9 +376,14 @@ export default function AdminPage() {
 
 
   const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/login', { method: 'DELETE' });
+    } catch (e) {}
+
     setIsAuthenticated(false);
     sessionStorage.removeItem('skokova_admin_auth');
     sessionStorage.removeItem('skokova_admin_info');
+    sessionStorage.removeItem('skokova_admin_token');
     setInputPin('');
     try {
       const supabase = createClient();
@@ -373,7 +396,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({ id, status: newStatus }),
       });
 
@@ -393,6 +419,7 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/admin/bookings?id=${id}`, {
         method: 'DELETE',
+        headers: { ...getAuthHeaders() },
       });
 
       if (res.ok) {
@@ -452,7 +479,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin/bookings', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           id: editingBooking.id,
           status: editStatus,
@@ -463,6 +493,7 @@ export default function AdminPage() {
           telegram_handle: editTelegram,
           child_name: editChild,
           child_grade: editChildGrade,
+
           comment: editComment,
           admin_notes: editAdminNotes,
           dateISO: editDateISO,

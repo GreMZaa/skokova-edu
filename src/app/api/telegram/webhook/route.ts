@@ -942,12 +942,31 @@ async function finalizeBooking(
   await setUserSession(supabase, parentUserId, session);
 }
 
+import { checkRateLimit, getClientIp, sanitizeError } from '@/lib/security';
+
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс 60 апдейтов в минуту от Telegram API с одного IP
+    const rateCheck = checkRateLimit(`tg-webhook:${clientIp}`, 60, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json({ success: false, error: 'Rate limit exceeded' }, { status: 429 });
+    }
+
+    // 12.4 Проверка секретного токена вебхука Telegram (x-telegram-bot-api-secret-token)
+    const expectedSecret = sanitizeEnv(process.env.TELEGRAM_WEBHOOK_SECRET);
+    if (expectedSecret) {
+      const incomingSecret = req.headers.get('x-telegram-bot-api-secret-token');
+      if (incomingSecret !== expectedSecret) {
+        return NextResponse.json({ success: false, error: 'Unauthorized webhook secret' }, { status: 401 });
+      }
+    }
+
     const update = await req.json();
-    let botToken = sanitizeEnv(process.env.TELEGRAM_BOT_TOKEN);
-    if (!botToken || botToken.length < 20) {
-      botToken = '8656501308:AAFDzAuFznqhjRgWd35p-NvUa_hg1pwhoqM';
+    const botToken = sanitizeEnv(process.env.TELEGRAM_BOT_TOKEN);
+    if (!botToken || botToken.includes('123456789')) {
+      return NextResponse.json({ success: false, error: 'TELEGRAM_BOT_TOKEN не настроен на сервере' }, { status: 500 });
     }
 
     const teacherChatId = sanitizeEnv(process.env.TELEGRAM_TEACHER_CHAT_ID) || '-5128191766';
@@ -958,6 +977,7 @@ export async function POST(req: Request) {
     // -------------------------------------------------------------
     if (update.callback_query) {
       const cb = update.callback_query;
+
       const cbData = cb.data || '';
       const cbId = cb.id;
 
@@ -1976,9 +1996,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Telegram webhook error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

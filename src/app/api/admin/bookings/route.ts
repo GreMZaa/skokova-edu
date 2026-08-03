@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendTelegramNotificationToParent } from '@/lib/telegram';
+import { getAdminSessionFromRequest, sanitizeError } from '@/lib/security';
 
 function getSamaraISOString(dateISO: string, timeStr: string): { startISO: string; endISO: string } | null {
   if (!dateISO || !timeStr) return null;
@@ -29,8 +30,14 @@ function getSamaraISOString(dateISO: string, timeStr: string): { startISO: strin
 }
 
 // GET: Получение всех реальных заявок из таблицы bookings в Supabase с ДИНАМИЧЕСКИМ форматированием даты из слота
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    // 12.2 Проверка администраторских прав сессии
+    const session = getAdminSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -68,13 +75,19 @@ export async function GET() {
       bookings: formattedBookings,
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
 
 // PATCH: Полное редактирование заявки администратором с автоматическим переносом и резервированием слота
 export async function PATCH(req: Request) {
   try {
+    // 12.2 Проверка администраторских прав сессии
+    const session = getAdminSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
     const {
       id,
@@ -222,13 +235,19 @@ export async function PATCH(req: Request) {
     });
   } catch (error: any) {
     console.error('Admin PATCH error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
 
 // DELETE: Удаление заявки из Supabase с освобождением слота
 export async function DELETE(req: Request) {
   try {
+    // 12.2 Проверка администраторских прав сессии
+    const session = getAdminSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
@@ -265,6 +284,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ success: true, message: 'Заявка успешно удалена из Supabase' });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

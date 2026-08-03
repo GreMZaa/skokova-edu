@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { checkRateLimit, getClientIp, sanitizeError } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIp(req);
+
+    // 12.9 Rate Limiting: макс 5 регистраций в минуту с одного IP
+    const rateCheck = checkRateLimit(`parent-signup:${clientIp}`, 5, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Слишком много запросов. Пожалуйста, подождите 1 минуту.' },
+        { status: 429 }
+      );
+    }
+
     const { email, password, fullName, phone, telegramHandle } = await req.json();
 
     if (!email || !password) {
@@ -57,6 +69,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('Signup admin error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

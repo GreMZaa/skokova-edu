@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { getAdminSessionFromRequest, sanitizeError } from '@/lib/security';
 
 export interface PaymentMethodItem {
   id: string;
@@ -142,9 +143,15 @@ export async function GET() {
   }
 }
 
-// POST: Безотказное сохранение нескольких карт в Supabase DB + metadata
+// POST: Безотказное сохранение нескольких карт в Supabase DB + metadata (Только для администраторов!)
 export async function POST(req: Request) {
   try {
+    // 12.2 Серверная проверка прав администратора
+    const session = getAdminSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
     const paymentMethods: PaymentMethodItem[] = body.payment_methods || DEFAULT_METHODS;
 
@@ -221,6 +228,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('Save settings error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

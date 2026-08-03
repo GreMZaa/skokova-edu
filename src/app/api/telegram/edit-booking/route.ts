@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendTelegramNotification } from '@/lib/telegram';
+import { getAdminSessionFromRequest, sanitizeError } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
+    // 12.2 Серверная проверка прав администратора
+    const session = getAdminSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { booking_id, new_slot_id, new_parent_name, new_phone, new_child_name, new_comment } = await req.json();
 
     if (!booking_id) {
@@ -51,6 +58,7 @@ export async function POST(req: Request) {
       message: 'Данные заявки успешно отредактированы',
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+

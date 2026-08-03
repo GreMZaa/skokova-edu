@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { sanitizeError } from '@/lib/security';
 
 export async function GET() {
   try {
@@ -43,6 +44,7 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error('Parent bookings fetch error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: sanitizeError(error) }, { status: 500 });
   }
 }
+
