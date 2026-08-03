@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { GRADE_LABELS, GradeLevel } from '@/types/database';
+import { sendTelegramNotification, escapeMarkdown } from '@/lib/telegram';
 
 function sanitizeStr(val: any): string {
   if (typeof val !== 'string') return '';
@@ -102,6 +103,41 @@ export async function POST(req: Request) {
       }
     }
 
+    // 5. Уведомление в Telegram чат админов/педагога о НОВОЙ ЗАЯВКЕ
+    const gradeText = GRADE_LABELS[child_grade] || child_grade;
+    const dateStr = selected_date && selected_slot_time ? `${selected_date}, ${selected_slot_time}` : 'Время на согласовании';
+    const cleanHandle = telegram_handle ? (telegram_handle.startsWith('@') ? telegram_handle : `@${telegram_handle}`) : '';
+
+    const messageText = `🆕 *НОВАЯ ЗАЯВКА С САЙТА!*\n\n` +
+      `📚 *Услуга:* ${escapeMarkdown(service_title)}\n` +
+      `📅 *Дата и время:* ${escapeMarkdown(dateStr)}\n` +
+      `💰 *Сумма:* ${price.toLocaleString('ru-RU')} ₽\n\n` +
+      `👤 *Родитель:* ${escapeMarkdown(parent_name)}\n` +
+      `📞 *Телефон:* \`${phone}\`\n` +
+      `💬 *Telegram:* ${cleanHandle ? escapeMarkdown(cleanHandle) : 'не указан'}\n` +
+      `👶 *Ребёнок:* ${escapeMarkdown(child_name)} (${escapeMarkdown(gradeText)})\n\n` +
+      `📝 *Комментарий:* ${escapeMarkdown(comment || 'отсутствует')}\n\n` +
+      `📌 *Статус:* ⏳ Ожидает оплаты`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Подтвердить запись', callback_data: `confirm_${booking_id}` },
+          { text: '✏️ Изменить заявку', callback_data: `edit_${booking_id}` }
+        ],
+        [
+          { text: '❌ Отклонить', callback_data: `reject_${booking_id}` },
+          { text: '💬 Написать родителю', url: cleanHandle ? `https://t.me/${cleanHandle.replace('@', '')}` : `tel:${phone}` }
+        ]
+      ]
+    };
+
+    await sendTelegramNotification({
+      text: messageText,
+      keyboard,
+      parseMode: 'Markdown',
+    });
+
     return NextResponse.json({
       success: true,
       booking_id,
@@ -193,51 +229,40 @@ export async function PATCH(req: Request) {
       receipt_file_url = `https://storage.demo/receipts/${receipt_file.name}`;
     }
 
-    // 4. Уведомление в Telegram Бот педагога
-    const botToken = sanitizeStr(process.env.TELEGRAM_BOT_TOKEN);
-    const teacherChatId = sanitizeStr(process.env.TELEGRAM_TEACHER_CHAT_ID);
+    // 4. Уведомление в Telegram Бот педагога/админов
+    const gradeText = GRADE_LABELS[child_grade] || child_grade;
+    const dateStr = selected_date && selected_slot_time ? `${selected_date}, ${selected_slot_time}` : 'Время на согласовании';
+    const cleanHandle = telegram_handle ? (telegram_handle.startsWith('@') ? telegram_handle : `@${telegram_handle}`) : '';
 
-    if (botToken && teacherChatId && !botToken.includes('123456789')) {
-      const gradeText = GRADE_LABELS[child_grade] || child_grade;
-      const messageText = `🔔 *ЧЕК ЗАГРУЖЕН! ПОДТВЕРДИТЕ ОПЛАТУ*\n\n` +
-        `📚 *Услуга:* ${service_title}\n` +
-        `📅 *Дата и время:* ${selected_date}, ${selected_slot_time}\n` +
-        `💰 *Сумма:* ${price.toLocaleString('ru-RU')} ₽\n\n` +
-        `👤 *Родитель:* ${parent_name}\n` +
-        `📞 *Телефон:* ${phone}\n` +
-        `💬 *Telegram:* ${telegram_handle || 'не указан'}\n` +
-        `👶 *Ребёнок:* ${child_name} (${gradeText})\n\n` +
-        `📝 *Комментарий:* ${comment || 'отсутствует'}\n\n` +
-        `🧾 *Чек оплаты:* ${receipt_file_url || 'Файл загружен'}`;
+    const messageText = `🔔 *ЧЕК ЗАГРУЖЕН! ПОДТВЕРДИТЕ ОПЛАТУ*\n\n` +
+      `📚 *Услуга:* ${escapeMarkdown(service_title)}\n` +
+      `📅 *Дата и время:* ${escapeMarkdown(dateStr)}\n` +
+      `💰 *Сумма:* ${price.toLocaleString('ru-RU')} ₽\n\n` +
+      `👤 *Родитель:* ${escapeMarkdown(parent_name)}\n` +
+      `📞 *Телефон:* \`${phone}\`\n` +
+      `💬 *Telegram:* ${cleanHandle ? escapeMarkdown(cleanHandle) : 'не указан'}\n` +
+      `👶 *Ребёнок:* ${escapeMarkdown(child_name)} (${escapeMarkdown(gradeText)})\n\n` +
+      `📝 *Комментарий:* ${escapeMarkdown(comment || 'отсутствует')}\n\n` +
+      `🧾 *Чек оплаты:* ${receipt_file_url ? escapeMarkdown(receipt_file_url) : 'Файл загружен'}`;
 
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: '✅ Подтвердить запись', callback_data: `confirm_${booking_id}` },
-            { text: '✏️ Изменить заявку', callback_data: `edit_${booking_id}` }
-          ],
-          [
-            { text: '❌ Отклонить', callback_data: `reject_${booking_id}` },
-            { text: '💬 Написать родителю', url: telegram_handle ? `https://t.me/${telegram_handle.replace('@', '')}` : `tel:${phone}` }
-          ]
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Подтвердить запись', callback_data: `confirm_${booking_id}` },
+          { text: '✏️ Изменить заявку', callback_data: `edit_${booking_id}` }
+        ],
+        [
+          { text: '❌ Отклонить', callback_data: `reject_${booking_id}` },
+          { text: '💬 Написать родителю', url: cleanHandle ? `https://t.me/${cleanHandle.replace('@', '')}` : `tel:${phone}` }
         ]
-      };
+      ]
+    };
 
-      try {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: teacherChatId,
-            text: messageText,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard,
-          }),
-        });
-      } catch (tgError) {
-        console.error('Telegram notification error:', tgError);
-      }
-    }
+    await sendTelegramNotification({
+      text: messageText,
+      keyboard,
+      parseMode: 'Markdown',
+    });
 
     return NextResponse.json({
       success: true,

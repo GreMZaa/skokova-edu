@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { SERVICES } from '@/data/services';
+import { sendTelegramNotification, escapeMarkdown } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -903,23 +904,19 @@ async function finalizeBooking(
 
   // Мгновенное уведомление педагогу
   const teacherNotification = `📌 *НОВАЯ ЗАЯВКА НА УРОК ИЗ TELEGRAM-БОТА!*\n\n` +
-    `📚 *Программа:* ${session.service_title || SERVICES[0].title}\n` +
-    `⏱ *Время:* ${session.slot_time || 'Согласовать время'}\n` +
-    `👤 *Родитель:* ${parentNameOnly} (${username || 'без ника'})\n` +
+    `📚 *Программа:* ${escapeMarkdown(session.service_title || SERVICES[0].title)}\n` +
+    `⏱ *Время:* ${escapeMarkdown(session.slot_time || 'Согласовать время')}\n` +
+    `👤 *Родитель:* ${escapeMarkdown(parentNameOnly)} (${username ? escapeMarkdown(username) : 'без ника'})\n` +
     `📞 *Телефон:* \`${phone}\`\n` +
-    `👶 *Ученик:* ${childNameOnly} (${rawGrade})\n` +
+    `👶 *Ученик:* ${escapeMarkdown(childNameOnly)} (${escapeMarkdown(rawGrade)})\n` +
     `💰 *Стоимость:* ${session.price || SERVICES[0].price} ₽\n` +
     `📌 *Статус:* ⏳ Ожидает оплаты чека\n` +
     `🆔 *ID записи:* \`${newBooking?.id || ''}\``;
 
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: teacherChatId,
-      text: teacherNotification,
-      parse_mode: 'Markdown',
-    }),
+  await sendTelegramNotification({
+    chatId: teacherChatId,
+    text: teacherNotification,
+    parseMode: 'Markdown',
   });
 
   const reqs = await getRequisites(supabase);

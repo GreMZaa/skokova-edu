@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { sendTelegramNotification } from '@/lib/telegram';
 
 export async function POST(req: Request) {
   try {
@@ -36,23 +37,13 @@ export async function POST(req: Request) {
     }
 
     // Оповещение педагога в Telegram об изменении
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const teacherChatId = process.env.TELEGRAM_TEACHER_CHAT_ID;
+    const updateMsg = `✏️ *ЗАЯВКА #${booking_id} ОБНОВЛЕНА ПЕДАГОГОМ*\n\n` +
+      `Изменения успешно внесены в систему.`;
 
-    if (botToken && teacherChatId && !botToken.includes('123456789')) {
-      const updateMsg = `✏️ *ЗАЯВКА #${booking_id} ОБНОВЛЕНА ПЕДАГОГОМ*\n\n` +
-        `Изменения успешно внесены в систему.`;
-
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: teacherChatId,
-          text: updateMsg,
-          parse_mode: 'Markdown',
-        }),
-      });
-    }
+    await sendTelegramNotification({
+      text: updateMsg,
+      parseMode: 'Markdown',
+    });
 
     return NextResponse.json({
       success: true,
