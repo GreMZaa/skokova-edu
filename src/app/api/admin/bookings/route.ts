@@ -46,18 +46,51 @@ export async function GET(req: Request) {
     }
 
     const supabase = createAdminClient();
-    const { data: dbBookings, error } = await supabase
+
+    // 1. Получаем все бронирования напрямую
+    let { data: dbBookings, error: bookingsErr } = await supabase
       .from('bookings')
-      .select('*, time_slots!bookings_slot_id_fkey(start_time)')
+      .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (bookingsErr) {
+      console.error('Fetch bookings error:', bookingsErr);
+      return NextResponse.json({ success: true, bookings: [] });
+    }
 
-    const formattedBookings = (dbBookings || []).map((item: any) => {
-      let dateStr = '';
-      let timeSlot = '';
-      if (item.time_slots?.start_time) {
-        const d = new Date(item.time_slots.start_time);
+    if (!dbBookings || dbBookings.length === 0) {
+      return NextResponse.json({ success: true, bookings: [] });
+    }
+
+    // 2. Дозапрашиваем слоты времени для получения точных дат
+    const slotIds = dbBookings.map((b: any) => b.slot_id).filter(Boolean);
+    let slotsMap: Record<string, string> = {};
+
+    if (slotIds.length > 0) {
+      try {
+        const { data: slotsData } = await supabase
+          .from('time_slots')
+          .select('id, start_time')
+          .in('id', slotIds);
+
+        if (slotsData) {
+          slotsData.forEach((s: any) => {
+            slotsMap[s.id] = s.start_time;
+          });
+        }
+      } catch (slotErr) {
+        console.warn('Slot lookup note:', slotErr);
+      }
+    }
+
+    // 3. Форматируем записи для админ-панели
+    const formattedBookings = dbBookings.map((item: any) => {
+      let dateStr = item.date_str || '';
+      let timeSlot = item.time_slot || '';
+      const startTime = slotsMap[item.slot_id];
+
+      if (startTime) {
+        const d = new Date(startTime);
         const dayStr = d.toLocaleDateString('ru-RU', { timeZone: 'Europe/Samara', day: 'numeric', month: 'long', weekday: 'short' });
         timeSlot = d.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Samara', hour: '2-digit', minute: '2-digit' });
         dateStr = `${dayStr}, ${timeSlot}`;
@@ -65,8 +98,8 @@ export async function GET(req: Request) {
 
       return {
         ...item,
-        dateStr,
-        timeSlot,
+        dateStr: dateStr || item.date_str || '',
+        timeSlot: timeSlot || item.time_slot || '',
       };
     });
 

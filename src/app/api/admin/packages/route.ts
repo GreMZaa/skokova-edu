@@ -12,13 +12,15 @@ export async function GET(req: Request) {
     }
 
     const adminSupabase = createAdminClient();
-    const { data: packages, error } = await adminSupabase
+    let { data: packages, error } = await adminSupabase
       .from('user_packages')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
-      return NextResponse.json({ success: true, packages: [] });
+      console.warn('Fetch user_packages ordered error, retrying without order:', error);
+      const fallback = await adminSupabase.from('user_packages').select('*');
+      packages = fallback.data || [];
     }
 
     return NextResponse.json({ success: true, packages: packages || [] });
