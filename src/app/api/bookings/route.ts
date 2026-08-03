@@ -44,8 +44,8 @@ export async function POST(req: Request) {
     const comment = sanitizeStr(formData.get('comment'));
     const user_id = sanitizeStr(formData.get('user_id'));
 
-    // 12.2 Mass Assignment Protection: статус при публичном заказе всегда 'pending_payment'
-    const initialStatus = 'pending_payment';
+    const requestedStatus = sanitizeStr(formData.get('status'));
+    const use_package = formData.get('use_package') === 'true' || requestedStatus === 'confirmed';
 
     if (!parent_name || !phone || !child_name) {
       return NextResponse.json(
@@ -58,25 +58,74 @@ export async function POST(req: Request) {
     const supabaseUrl = sanitizeStr(process.env.NEXT_PUBLIC_SUPABASE_URL);
     const supabaseServiceKey = sanitizeStr(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+    let initialStatus = 'pending_payment';
+    let paymentMethod = 'sbp';
+    let packageDeducted = false;
+    let remainingLessonsInPkg = 0;
+
     if (supabaseUrl && supabaseServiceKey && !supabaseUrl.includes('your-project')) {
       const supabase = createAdminClient();
 
-      // 1. Создаём предзаявку со статусом 'pending_payment'
+      // Автоматическое списание 1 урока из активного абонемента
+      if (use_package) {
+        try {
+          let pkgQuery = supabase
+            .from('user_packages')
+            .select('*')
+            .eq('status', 'active')
+            .gt('remaining_lessons', 0)
+            .order('created_at', { ascending: true })
+            .limit(1);
+
+          if (user_id) {
+            pkgQuery = pkgQuery.eq('user_id', user_id);
+          } else if (phone) {
+            pkgQuery = pkgQuery.eq('parent_phone', phone);
+          }
+
+          const { data: activePkgs } = await pkgQuery;
+          if (activePkgs && activePkgs.length > 0) {
+            const targetPkg = activePkgs[0];
+            remainingLessonsInPkg = Math.max(0, targetPkg.remaining_lessons - 1);
+            await supabase
+              .from('user_packages')
+              .update({
+                remaining_lessons: remainingLessonsInPkg,
+                status: remainingLessonsInPkg === 0 ? 'completed' : 'active',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', targetPkg.id);
+
+            packageDeducted = true;
+            initialStatus = 'confirmed';
+            paymentMethod = 'package';
+          }
+        } catch (pkgErr) {
+          console.error('Package deduction in booking route error:', pkgErr);
+        }
+      }
+
+      const finalComment = comment
+        ? (packageDeducted ? `${comment} [🎟️ Списано 1 занятие из абонемента]` : comment)
+        : (packageDeducted ? '[🎟️ Списано 1 занятие из абонемента]' : '');
+
+      // 1. Создаём предзаявку с соответствующим статусом
       const { data: bookingData, error: bookingError } = await supabase
         .from('bookings')
         .insert({
           slot_id: slot_id || null,
           user_id: user_id || null,
           service_title,
-          price,
+          price: packageDeducted ? 0 : price,
           parent_name,
           phone,
           telegram_handle,
           child_name,
           child_grade,
-          comment,
+          comment: finalComment,
           receipt_file_url: null,
           status: initialStatus,
+          payment_method: paymentMethod,
         })
         .select()
         .single();
@@ -126,16 +175,27 @@ export async function POST(req: Request) {
     const dateStr = selected_date && selected_slot_time ? `${selected_date}, ${selected_slot_time}` : 'Время на согласовании';
     const cleanHandle = telegram_handle ? (telegram_handle.startsWith('@') ? telegram_handle : `@${telegram_handle}`) : '';
 
-    const messageText = `🆕 *НОВАЯ ЗАЯВКА С САЙТА!*\n\n` +
-      `📚 *Услуга:* ${escapeMarkdown(service_title)}\n` +
-      `📅 *Дата и время:* ${escapeMarkdown(dateStr)}\n` +
-      `💰 *Сумма:* ${price.toLocaleString('ru-RU')} ₽\n\n` +
-      `👤 *Родитель:* ${escapeMarkdown(parent_name)}\n` +
-      `📞 *Телефон:* \`${phone}\`\n` +
-      `💬 *Telegram:* ${cleanHandle ? escapeMarkdown(cleanHandle) : 'не указан'}\n` +
-      `👶 *Ребёнок:* ${escapeMarkdown(child_name)} (${escapeMarkdown(gradeText)})\n\n` +
-      `📝 *Комментарий:* ${escapeMarkdown(comment || 'отсутствует')}\n\n` +
-      `📌 *Статус:* ⏳ Ожидает оплаты`;
+    const messageText = packageDeducted
+      ? `🎟️ *НОВАЯ ЗАПИСЬ (ОПЛАЧЕНО АБОНЕМЕНТОМ)*\n\n` +
+        `📚 *Услуга:* ${escapeMarkdown(service_title)}\n` +
+        `📅 *Дата и время:* ${escapeMarkdown(dateStr)}\n` +
+        `🎟️ *Оплата:* Списано 1 занятие из абонемента (Осталось на балансе: ${remainingLessonsInPkg} уроков)\n\n` +
+        `👤 *Родитель:* ${escapeMarkdown(parent_name)}\n` +
+        `📞 *Телефон:* \`${phone}\`\n` +
+        `💬 *Telegram:* ${cleanHandle ? escapeMarkdown(cleanHandle) : 'не указан'}\n` +
+        `👶 *Ребёнок:* ${escapeMarkdown(child_name)} (${escapeMarkdown(gradeText)})\n\n` +
+        `📝 *Комментарий:* ${escapeMarkdown(comment || 'отсутствует')}\n\n` +
+        `📌 *Статус:* ✅ *Подтверждено (Списано из абонемента)*`
+      : `🆕 *НОВАЯ ЗАЯВКА С САЙТА!*\n\n` +
+        `📚 *Услуга:* ${escapeMarkdown(service_title)}\n` +
+        `📅 *Дата и время:* ${escapeMarkdown(dateStr)}\n` +
+        `💰 *Сумма:* ${price.toLocaleString('ru-RU')} ₽\n\n` +
+        `👤 *Родитель:* ${escapeMarkdown(parent_name)}\n` +
+        `📞 *Телефон:* \`${phone}\`\n` +
+        `💬 *Telegram:* ${cleanHandle ? escapeMarkdown(cleanHandle) : 'не указан'}\n` +
+        `👶 *Ребёнок:* ${escapeMarkdown(child_name)} (${escapeMarkdown(gradeText)})\n\n` +
+        `📝 *Комментарий:* ${escapeMarkdown(comment || 'отсутствует')}\n\n` +
+        `📌 *Статус:* ⏳ Ожидает оплаты`;
 
     const keyboard = {
       inline_keyboard: [

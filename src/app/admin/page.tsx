@@ -52,6 +52,7 @@ interface AdminBooking {
   timeSlot?: string;
   receipt_file_url?: string;
   status: BookingStatus;
+  payment_method?: string;
   comment?: string;
   admin_notes?: string;
   created_at: string;
@@ -916,6 +917,15 @@ export default function AdminPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             {filteredBookings.map((b) => {
               const renderStatusBadge = () => {
+                if (b.payment_method === 'package' || b.comment?.includes('абонемент')) {
+                  return (
+                    <span className="px-2.5 py-1 rounded-full bg-purple-100 text-purple-900 text-[10px] font-mono font-bold border border-purple-300 inline-flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-purple-600" />
+                      <span>🎟️ Оплачено из абонемента</span>
+                    </span>
+                  );
+                }
+
                 switch (b.status) {
                   case 'pending_payment':
                     return (
