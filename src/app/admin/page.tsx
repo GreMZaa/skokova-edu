@@ -168,23 +168,24 @@ export default function AdminPage() {
 
   useEffect(() => {
     const checkAdminAuth = async () => {
-      const storedAdminInfo = sessionStorage.getItem('skokova_admin_info');
+      const storedAdminInfo = sessionStorage.getItem('skokova_admin_info') || localStorage.getItem('skokova_admin_info');
       if (storedAdminInfo) {
         try {
           setAdminInfo(JSON.parse(storedAdminInfo));
         } catch (e) {}
       }
 
-      try {
-        const token = sessionStorage.getItem('skokova_admin_token') || localStorage.getItem('skokova_admin_token');
-        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const token = sessionStorage.getItem('skokova_admin_token') || localStorage.getItem('skokova_admin_token');
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
+      try {
         const res = await fetch('/api/admin/bookings', { headers });
         const data = await res.json();
 
         if (res.ok && data.success) {
           setIsAuthenticated(true);
           sessionStorage.setItem('skokova_admin_auth', 'true');
+          localStorage.setItem('skokova_admin_auth', 'true');
           setBookings(data.bookings || []);
           fetchAuditLogs();
           fetchRequisites();
@@ -195,9 +196,18 @@ export default function AdminPage() {
         console.error('Admin session verification error:', e);
       }
 
-      // Если с сервера пришел 401 или произошла ошибка, сбрасываем статус авторизации без цикличной перезагрузки
+      // Если авторизация была ранее успешной и токен есть в памяти, сохраняем вход
+      if (
+        (sessionStorage.getItem('skokova_admin_auth') === 'true' || localStorage.getItem('skokova_admin_auth') === 'true') &&
+        token
+      ) {
+        setIsAuthenticated(true);
+        fetchRealBookings();
+        fetchAdminPackages();
+        return;
+      }
+
       setIsAuthenticated(false);
-      sessionStorage.removeItem('skokova_admin_auth');
     };
 
     checkAdminAuth();
@@ -310,7 +320,7 @@ export default function AdminPage() {
 
   const getAuthHeaders = (): Record<string, string> => {
     if (typeof window === 'undefined') return {};
-    const token = sessionStorage.getItem('skokova_admin_token');
+    const token = sessionStorage.getItem('skokova_admin_token') || localStorage.getItem('skokova_admin_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
@@ -351,8 +361,6 @@ export default function AdminPage() {
       const data = await res.json();
       if (data.success && data.bookings) {
         setBookings(data.bookings);
-      } else if (res.status === 401) {
-        setIsAuthenticated(false);
       }
     } catch (e) {
       console.error('Failed to fetch bookings:', e);
@@ -421,7 +429,9 @@ export default function AdminPage() {
       setIsAuthenticated(true);
       setAdminInfo(info);
       sessionStorage.setItem('skokova_admin_auth', 'true');
+      localStorage.setItem('skokova_admin_auth', 'true');
       sessionStorage.setItem('skokova_admin_info', JSON.stringify(info));
+      localStorage.setItem('skokova_admin_info', JSON.stringify(info));
 
       fetchRealBookings();
       fetchAuditLogs();
@@ -444,6 +454,9 @@ export default function AdminPage() {
     sessionStorage.removeItem('skokova_admin_auth');
     sessionStorage.removeItem('skokova_admin_info');
     sessionStorage.removeItem('skokova_admin_token');
+    localStorage.removeItem('skokova_admin_auth');
+    localStorage.removeItem('skokova_admin_info');
+    localStorage.removeItem('skokova_admin_token');
     setInputPin('');
     try {
       const supabase = createClient();

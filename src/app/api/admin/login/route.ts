@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. АВТОРИЗАЦИЯ ЧЕРЕЗ SUPABASE AUTH (EMAIL + ПАРОЛЬ) С АВТО-СИНХРОНИЗАЦИЕЙ ПАРОЛЯ ДЛЯ АДМИНИСТРАТОРОВ
+    // 2. СТРОГАЯ АВТОРИЗАЦИЯ ЧЕРЕЗ SUPABASE AUTH (ТОЛЬКО EMAIL + НАСТОЯЩИЙ ПАРОЛЬ)
     if (!isSuccess && (authType === 'supabase' || email || password)) {
       const cleanEmail = String(email || '').trim().toLowerCase();
       const cleanPassword = String(password || '').trim();
@@ -119,7 +119,7 @@ export async function POST(req: Request) {
           const { createClient: createSupabaseJS } = require('@supabase/supabase-js');
           const supabaseClient = createSupabaseJS(supabaseUrl, supabaseAnonKey);
 
-          // 1. Пробуем стандартный вход по указанному паролю
+          // Проверка строго по паролю в Supabase Auth (без любых PIN-кодов и фолбеков)
           const { data: authData, error: authErr } = await supabaseClient.auth.signInWithPassword({
             email: cleanEmail,
             password: cleanPassword,
@@ -133,56 +133,6 @@ export async function POST(req: Request) {
               email: authData.user.email,
               name: authData.user.user_metadata?.full_name || authData.user.email,
             };
-          } else {
-            // 2. Если пароль не подошёл или пользователь не создан в Supabase Auth, авто-синхронизируем учетную запись администратора
-            const adminSupabase = createAdminClient();
-            const { data: usersData } = await adminSupabase.auth.admin.listUsers();
-            const existingUser = usersData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
-
-            const isPhoneMatch =
-              cleanPassword === '79372144205' ||
-              cleanPassword === '79608374706' ||
-              cleanPassword === '2470' ||
-              cleanPassword === '2010' ||
-              cleanPassword === 'skokova2026' ||
-              cleanPassword === 'admin2026';
-
-            if (existingUser) {
-              // Если пароль длиннее 3 символов или равен известным телефонам/пинам, обновляем пароль в Supabase Auth
-              if (cleanPassword.length >= 4 || isPhoneMatch) {
-                await adminSupabase.auth.admin.updateUserById(existingUser.id, {
-                  password: cleanPassword,
-                  email_confirm: true,
-                });
-                isSuccess = true;
-                authMethodUsed = 'supabase_synced';
-                adminIdentifier = `supabase:${cleanEmail}`;
-                adminInfo = {
-                  email: cleanEmail,
-                  name: existingUser.user_metadata?.full_name || (cleanEmail.includes('lev') ? 'Сергей Шаронов' : 'Скокова Юлия Павловна'),
-                };
-              }
-            } else {
-              // Автоматически создаем учетную запись администратора в Supabase Auth
-              const { data: newUser } = await adminSupabase.auth.admin.createUser({
-                email: cleanEmail,
-                password: cleanPassword,
-                email_confirm: true,
-                user_metadata: {
-                  full_name: cleanEmail.includes('lev') ? 'Сергей Шаронов' : 'Скокова Юлия Павловна',
-                },
-              });
-
-              if (newUser?.user) {
-                isSuccess = true;
-                authMethodUsed = 'supabase_created';
-                adminIdentifier = `supabase:${cleanEmail}`;
-                adminInfo = {
-                  email: cleanEmail,
-                  name: cleanEmail.includes('lev') ? 'Сергей Шаронов' : 'Скокова Юлия Павловна',
-                };
-              }
-            }
           }
         } catch (e) {
           console.warn('Supabase auth check error:', e);
