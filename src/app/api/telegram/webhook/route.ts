@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { SERVICES } from '@/data/services';
-import { sendTelegramNotification, escapeMarkdown } from '@/lib/telegram';
+import { sendTelegramNotification, sendTelegramNotificationToParent, escapeMarkdown } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -960,6 +960,81 @@ export async function POST(req: Request) {
     const supabase = createAdminClient();
 
     // -------------------------------------------------------------
+    // 0. ОБРАБОТКА CALLBACK_QUERY (КНОПКИ В ЧАТЕ АДМИНА / ПОЛЬЗОВАТЕЛЯ)
+    // -------------------------------------------------------------
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const cbData = cb.data || '';
+      const cbId = cb.id;
+
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: cbId }),
+        });
+      } catch (e) {}
+
+      if (cbData.startsWith('confirm_') || cbData.startsWith('reject_')) {
+        const isConfirm = cbData.startsWith('confirm_');
+        const bookingId = cbData.replace(/^(confirm|reject)_/, '');
+
+        const { data: booking } = await supabase
+          .from('bookings')
+          .select('*, time_slots!bookings_slot_id_fkey(start_time)')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        if (booking) {
+          const newStatus = isConfirm ? 'confirmed' : 'cancelled';
+          await supabase
+            .from('bookings')
+            .update({
+              status: newStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', bookingId);
+
+          // Отправляем уведомление родителю/пользователю!
+          await sendTelegramNotificationToParent(supabase, { ...booking, status: newStatus }, newStatus);
+
+          // Обновляем сообщение в чате админа
+          if (cb.message?.message_id && cb.message?.chat?.id) {
+            const statusLabel = isConfirm ? '✅ ЗАПИСЬ И ОПЛАТА ПОДТВЕРЖДЕНЫ' : '❌ ЗАЯВКА ОТКЛОНЕНА';
+            const oldText = cb.message.text || '';
+            const updatedText = `${oldText}\n\n📌 *СТАТУС ИЗМЕНЁН:* ${statusLabel}`;
+
+            try {
+              let editRes = await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: cb.message.chat.id,
+                  message_id: cb.message.message_id,
+                  text: updatedText,
+                  parse_mode: 'Markdown',
+                }),
+              });
+              let editJson = await editRes.json();
+              if (!editJson.ok) {
+                await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: cb.message.chat.id,
+                    message_id: cb.message.message_id,
+                    text: updatedText.replace(/[*_`]/g, ''),
+                  }),
+                });
+              }
+            } catch (e) {}
+          }
+        }
+        return NextResponse.json({ success: true });
+      }
+    }
+
+    // -------------------------------------------------------------
     // 1. ОБРАБОТКА ПОЛУЧЕНИЯ ФОТО / ЧЕКА В ЧАТЕ TELEGRAM
     // -------------------------------------------------------------
     if (update.message && (update.message.photo || update.message.document)) {
@@ -1007,11 +1082,11 @@ export async function POST(req: Request) {
           .eq('id', pendingBooking.id);
 
         const caption = `📑 *ЧЕК ОБ ОПЛАТЕ ЗАНЯТИЯ ПОЛУЧЕН!*\n\n` +
-          `👤 *Родитель:* ${pendingBooking.parent_name || firstName} (${username || 'без ника'})\n` +
+          `👤 *Родитель:* ${escapeMarkdown(pendingBooking.parent_name || firstName)} (${username ? escapeMarkdown(username) : 'без ника'})\n` +
           `📞 *Телефон:* \`${pendingBooking.phone || 'не указан'}\`\n` +
-          `👶 *Ученик:* ${pendingBooking.child_name}\n` +
-          `📚 *Услуга:* ${pendingBooking.service_title}\n` +
-          `💰 *Сумма:* ${pendingBooking.price} ₽\n` +
+          `👶 *Ученик:* ${escapeMarkdown(pendingBooking.child_name || 'Не указан')}\n` +
+          `📚 *Услуга:* ${escapeMarkdown(pendingBooking.service_title || 'Занятие')}\n` +
+          `💰 *Сумма:* ${pendingBooking.price || 0} ₽\n` +
           `🆔 *ID записи:* \`${pendingBooking.id}\``;
 
         const inlineAdminKb = {
@@ -1024,7 +1099,7 @@ export async function POST(req: Request) {
         };
 
         if (photoFileId) {
-          await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+          let photoRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1035,6 +1110,21 @@ export async function POST(req: Request) {
               reply_markup: inlineAdminKb,
             }),
           });
+
+          let photoJson = await photoRes.json();
+          if (!photoJson.ok) {
+            console.warn('sendPhoto failed with Markdown, retrying without parse_mode:', photoJson.description);
+            await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: teacherChatId,
+                photo: photoFileId,
+                caption: caption.replace(/[*_`]/g, ''),
+                reply_markup: inlineAdminKb,
+              }),
+            });
+          }
         }
 
         await sendAndTrackMessage(botToken, chatId, {

@@ -176,6 +176,8 @@ export async function PATCH(req: Request) {
     }
 
     let receipt_file_url = '';
+    let dbBooking: any = null;
+
     const supabaseUrl = sanitizeStr(process.env.NEXT_PUBLIC_SUPABASE_URL);
     const supabaseServiceKey = sanitizeStr(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -225,25 +227,55 @@ export async function PATCH(req: Request) {
           .update({ is_booked: true, locked_until: null })
           .eq('id', slot_id);
       }
+
+      // 4. Достаем актуальную запись из БД для полной информации в уведомлении
+      const { data: fetchedBooking } = await supabase
+        .from('bookings')
+        .select('*, time_slots!bookings_slot_id_fkey(start_time)')
+        .eq('id', booking_id)
+        .maybeSingle();
+
+      dbBooking = fetchedBooking;
     } else {
       receipt_file_url = `https://storage.demo/receipts/${receipt_file.name}`;
     }
 
-    // 4. Уведомление в Telegram Бот педагога/админов
-    const gradeText = GRADE_LABELS[child_grade] || child_grade;
-    const dateStr = selected_date && selected_slot_time ? `${selected_date}, ${selected_slot_time}` : 'Время на согласовании';
-    const cleanHandle = telegram_handle ? (telegram_handle.startsWith('@') ? telegram_handle : `@${telegram_handle}`) : '';
+    // 5. Уведомление в Telegram Бот педагога/админов
+    const finalServiceTitle = service_title || dbBooking?.service_title || 'Занятие';
+    const finalPrice = price || dbBooking?.price || 0;
+    const finalParentName = parent_name || dbBooking?.parent_name || 'Родитель';
+    const finalPhone = phone || dbBooking?.phone || '';
+    const rawHandle = telegram_handle || dbBooking?.telegram_handle || '';
+    const cleanHandle = rawHandle ? (rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`) : '';
+    const finalChildName = child_name || dbBooking?.child_name || 'Ребёнок';
+    const finalChildGrade = (child_grade || dbBooking?.child_grade) as GradeLevel;
+    const gradeText = GRADE_LABELS[finalChildGrade] || finalChildGrade || 'Подготовка к школе';
+    const finalComment = comment || dbBooking?.comment || '';
+
+    let dateStr = selected_date && selected_slot_time ? `${selected_date}, ${selected_slot_time}` : '';
+    if (!dateStr && dbBooking?.time_slots?.start_time) {
+      dateStr = new Date(dbBooking.time_slots.start_time).toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Samara',
+      });
+    }
+    if (!dateStr) dateStr = 'Время на согласовании';
+
+    const receiptLinkText = receipt_file_url ? `[Открыть чек](${receipt_file_url})` : 'Файл загружен';
 
     const messageText = `🔔 *ЧЕК ЗАГРУЖЕН! ПОДТВЕРДИТЕ ОПЛАТУ*\n\n` +
-      `📚 *Услуга:* ${escapeMarkdown(service_title)}\n` +
+      `📚 *Услуга:* ${escapeMarkdown(finalServiceTitle)}\n` +
       `📅 *Дата и время:* ${escapeMarkdown(dateStr)}\n` +
-      `💰 *Сумма:* ${price.toLocaleString('ru-RU')} ₽\n\n` +
-      `👤 *Родитель:* ${escapeMarkdown(parent_name)}\n` +
-      `📞 *Телефон:* \`${phone}\`\n` +
+      `💰 *Сумма:* ${finalPrice.toLocaleString('ru-RU')} ₽\n\n` +
+      `👤 *Родитель:* ${escapeMarkdown(finalParentName)}\n` +
+      `📞 *Телефон:* \`${finalPhone}\`\n` +
       `💬 *Telegram:* ${cleanHandle ? escapeMarkdown(cleanHandle) : 'не указан'}\n` +
-      `👶 *Ребёнок:* ${escapeMarkdown(child_name)} (${escapeMarkdown(gradeText)})\n\n` +
-      `📝 *Комментарий:* ${escapeMarkdown(comment || 'отсутствует')}\n\n` +
-      `🧾 *Чек оплаты:* ${receipt_file_url ? escapeMarkdown(receipt_file_url) : 'Файл загружен'}`;
+      `👶 *Ребёнок:* ${escapeMarkdown(finalChildName)} (${escapeMarkdown(gradeText)})\n\n` +
+      `📝 *Комментарий:* ${escapeMarkdown(finalComment || 'отсутствует')}\n\n` +
+      `🧾 *Чек оплаты:* ${receiptLinkText}`;
 
     const keyboard = {
       inline_keyboard: [
@@ -253,7 +285,7 @@ export async function PATCH(req: Request) {
         ],
         [
           { text: '❌ Отклонить', callback_data: `reject_${booking_id}` },
-          { text: '💬 Написать родителю', url: cleanHandle ? `https://t.me/${cleanHandle.replace('@', '')}` : `tel:${phone}` }
+          { text: '💬 Написать родителю', url: cleanHandle ? `https://t.me/${cleanHandle.replace('@', '')}` : `tel:${finalPhone}` }
         ]
       ]
     };
