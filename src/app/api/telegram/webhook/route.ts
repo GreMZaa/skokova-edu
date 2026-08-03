@@ -517,9 +517,6 @@ const mainInlineKeyboard = {
   inline_keyboard: [
     [{ text: '📅 Записаться на урок', callback_data: 'start_booking' }],
     [{ text: '👤 Мой кабинет', callback_data: 'menu_my' }],
-    [{ text: '📚 Программы и тарифы', callback_data: 'menu_programs' }],
-    [{ text: '💳 Реквизиты оплаты', callback_data: 'menu_requisites' }],
-    [{ text: '💬 Связаться с педагогом', callback_data: 'menu_contact' }],
   ],
 };
 
